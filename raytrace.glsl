@@ -78,7 +78,7 @@ void CS()
             imageStore(outTex, uv2, vec4(cur.xyz + e * s, 1));
         }
 
-        if (energy(ray.energy) <= 0.0)
+        if (ray.energy.x <= 0.0 && ray.energy.y <= 0.0 && ray.energy.z <= 0.0)
             break;
     }
     imageStore(tex, ivec2(id.x, id.y), vec4(result, 1));

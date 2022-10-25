@@ -105,7 +105,7 @@ public class Program
         {
             using var commandList = gd.ResourceFactory.CreateCommandList();
 
-            string[] text = File.ReadAllLines("raytrace.glsl");
+            string[] text = File.ReadAllLines("lightmap.glsl");
             for (int i = 0; i < text.Length; i++)
             {
                 string tline = text[i].Trim();
@@ -161,7 +161,7 @@ public class Program
                     {
                         model = node.WorldMatrix,
                         invModel = invModel,
-                        indices = new Vector4(0, indexes.Length, 0f, 0f),
+                        indices = new Vector4(0, indexes.Length, 0, 0),
                     },
                 },
                 meshVertices = vertices,
@@ -172,7 +172,7 @@ public class Program
 
             using var shader = gd.ResourceFactory.CreateFromSpirv(new ShaderDescription(ShaderStages.Compute, Encoding.UTF8.GetBytes(result.ComputeShader), "main"));
             using var texture = gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(1024, 1024, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Storage));
-            using var textureOut = gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(2048, 2048, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Storage));
+            using var textureOut = gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(1024, 1024, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Storage));
             using var buffer1 = gd.ResourceFactory.CreateBuffer(new BufferDescription((uint)Unsafe.SizeOf<Params>(), BufferUsage.UniformBuffer));
             gd.UpdateBuffer(buffer1, 0, paramz);
             using var buffer2 = gd.ResourceFactory.CreateBuffer(new BufferDescription((uint)(world.spheres.Length * Unsafe.SizeOf<Sphere>()), BufferUsage.StructuredBufferReadOnly, (uint)Unsafe.SizeOf<Sphere>()));
@@ -198,6 +198,7 @@ public class Program
                 sets.Add(set);
             }
             using var pipeline = gd.ResourceFactory.CreateComputePipeline(new ComputePipelineDescription(shader, layouts.ToArray(), 16, 16, 1));
+            // using var pipeline = gd.ResourceFactory.CreateComputePipeline(new ComputePipelineDescription(shader, layouts.ToArray(), 16, 1, 1));
 
             Console.WriteLine("Middle");
 
@@ -207,7 +208,10 @@ public class Program
                 commandList.SetPipeline(pipeline);
                 for (int i = 0; i < sets.Count; i++)
                     commandList.SetComputeResourceSet((uint)i, sets[i]);
-                commandList.Dispatch(1024 / 16, 1024 / 16, 1);
+                // commandList.Dispatch(texture.Width / 16, texture.Height / 16, 1);
+                commandList.Dispatch(textureOut.Width / 16, textureOut.Height / 16, 1);
+                // commandList.Dispatch(textureOut.Width / 32, textureOut.Height / 32, 1);
+                // commandList.Dispatch((uint)(world.meshes.Length / 16), 1, 1);
                 commandList.End();
                 gd.SubmitCommands(commandList);
                 gd.WaitForIdle();
