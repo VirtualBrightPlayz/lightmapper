@@ -120,7 +120,7 @@ void TraceMesh(MeshObject mesh, PointLightObject light, vec2 uv1, bool add)
         ray.origin = ray.origin.xyz + ray.direction * 0.001;
         // vec3 rng = normalize((vec3(rand(), rand(), rand()) - 0.5) * 2);
         ray.direction = -ray.direction;
-        ray.direction = SampleHemisphere(ray.direction, 0.1);
+        // ray.direction = SampleHemisphere(ray.direction, 0);
         // ray.energy = light.color.rgb;
 
         vec3 result = vec3(0);
@@ -153,7 +153,7 @@ void TraceMesh(MeshObject mesh, PointLightObject light, vec2 uv1, bool add)
         }
         */
         minmax = 0;
-        int j = (uvw.x >= -minmax && uvw.x <= 1+minmax && uvw.y >= -minmax && uvw.y <= 1+minmax && uvw.z >= -minmax && uvw.z <= 1+minmax) ? 0 : 0;
+        int j = (uvw.x >= -minmax && uvw.x <= 1+minmax && uvw.y >= -minmax && uvw.y <= 1+minmax && uvw.z >= -minmax && uvw.z <= 1+minmax) ? 0 : 2;
         int k = (j * 2 + 1);
         k *= k;
         for (int y = -j; y <= j; y++)

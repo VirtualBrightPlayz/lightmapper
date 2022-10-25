@@ -218,6 +218,8 @@ vec3 Shade(inout Ray ray, RayHit hit)
             for (float j = 0; j <= lights[i].position.w; j+=lights[i].position.w/4.0)
             {
                 vec3 rng = normalize((vec3(rand(), rand(), rand()) - 0.5) * 2);
+                // vec3 rng = normalize(dirLight2 * rand());
+                // vec3 rng = dirLight2;
                 lightOffset = (lights[i].position.xyz + rng * -j);
                 vec3 dirLight5 = normalize(lightOffset - hit.position);
                 // dirLight5 = SampleHemisphere(dirLight5, 0);
@@ -231,12 +233,12 @@ vec3 Shade(inout Ray ray, RayHit hit)
                     vec3 dirLight3 = normalize(lightOffset - shadowHit2.position);
                     v *= clamp(dot(-dirLight5.xyz, dirLight3.xyz), 0, 1);
                     att += v;
-                    // att /= 2;
+                    att /= 2;
                 }
                 k++;
             }
             // att /= 4.0;
-            att /= k;
+            // att /= k;
             dirLight2 = normalize(lightOffset - hit.position);
             Ray shadowRay2 = CreateRay(hit.position + hit.normal * 0.001, dirLight2.xyz);
             RayHit shadowHit2 = Trace(shadowRay2);

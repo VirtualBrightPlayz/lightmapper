@@ -84,7 +84,7 @@ public class Program
 
     public static void Main(string[] args)
     {
-        uint samples = 16;
+        uint samples = 32;
         uint texSize = 1024;
         Console.WriteLine("Begin");
 
@@ -269,7 +269,7 @@ public class Program
             gd.UpdateBuffer(addBuffer1, 0, new Vector4(0));
             using var gfxTexture = gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(textureOut.Width, textureOut.Height, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.RenderTarget));
             using var gfxFramebuffer = gd.ResourceFactory.CreateFramebuffer(new FramebufferDescription(null, gfxTexture));
-            using var gfxSampler = gd.ResourceFactory.CreateSampler(SamplerDescription.Linear);
+            using var gfxSampler = gd.ResourceFactory.CreateSampler(SamplerDescription.Point);
 
             BindableResource[][] gfxResources = new BindableResource[][]
             {
@@ -296,7 +296,15 @@ public class Program
             for (int k = 0; k < samples; k++)
             {
                 Console.WriteLine($"{k}/{samples} Done");
+                Console.Out.Flush();
                 Thread.Sleep(100);
+                try
+                {
+                    if (Console.KeyAvailable)
+                        break;
+                }
+                catch
+                { }
                 paramz.seed = new Vector4(Random.Shared.NextSingle());
                 commandList.Begin();
 
