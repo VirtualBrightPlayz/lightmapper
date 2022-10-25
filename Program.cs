@@ -84,6 +84,8 @@ public class Program
 
     public static void Main(string[] args)
     {
+        uint samples = 16;
+        uint texSize = 1024;
         Console.WriteLine("Begin");
 
         ModelRoot root = ModelRoot.Load("cube.glb");
@@ -197,8 +199,8 @@ public class Program
 
             // compute setup
             using var shader = gd.ResourceFactory.CreateFromSpirv(new ShaderDescription(ShaderStages.Compute, Encoding.UTF8.GetBytes(result.ComputeShader), "main"));
-            using var texture = gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(1024, 1024, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Storage | TextureUsage.Sampled));
-            using var textureOut = gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(1024, 1024, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Storage | TextureUsage.Sampled));
+            using var texture = gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(texSize, texSize, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Storage | TextureUsage.Sampled));
+            using var textureOut = gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(texSize, texSize, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Storage | TextureUsage.Sampled));
             using var buffer1 = gd.ResourceFactory.CreateBuffer(new BufferDescription((uint)Unsafe.SizeOf<Params>(), BufferUsage.UniformBuffer));
             gd.UpdateBuffer(buffer1, 0, paramz);
             using var buffer2 = gd.ResourceFactory.CreateBuffer(new BufferDescription((uint)(world.spheres.Length * Unsafe.SizeOf<Sphere>()), BufferUsage.StructuredBufferReadOnly, (uint)Unsafe.SizeOf<Sphere>()));
@@ -291,8 +293,10 @@ public class Program
             Console.WriteLine("Middle");
 
             // while (window.Exists)
-            for (int k = 0; k < 1; k++)
+            for (int k = 0; k < samples; k++)
             {
+                Console.WriteLine($"{k}/{samples} Done");
+                Thread.Sleep(100);
                 paramz.seed = new Vector4(Random.Shared.NextSingle());
                 commandList.Begin();
 
@@ -321,11 +325,12 @@ public class Program
                 commandList.SetIndexBuffer(indexBuffer, IndexFormat.UInt16);
                 commandList.DrawIndexed(4);
 
+                commandList.CopyTexture(gfxTexture, textureOut);
+
                 commandList.End();
                 gd.SubmitCommands(commandList);
                 gd.WaitForIdle();
-                Console.WriteLine($"{k}");
-                Thread.Sleep(30);
+                // Thread.Sleep(100);
                 // window.PumpEvents();
             }
 

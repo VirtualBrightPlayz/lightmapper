@@ -55,7 +55,7 @@ float atten(vec3 pos)
     for (uint i = 0; i < lights.length(); i++)
     {
         vec3 dir = normalize(pos - lights[i].position.xyz);
-        float d = distance(lights[i].position.xyz + dir * 0.25, pos);
+        float d = distance(lights[i].position.xyz + dir * 0, pos);
         if (d <= 0)
             continue;
         float v = (lights[i].position.w / (d * d));
@@ -68,7 +68,7 @@ float atten(vec3 pos)
 #include "ray.glsl"
 #include "rayhit.glsl"
 #include "intersect.glsl"
-#line 71 "lightmap.glsl"
+#line 72 "lightmap.glsl"
 
 vec3 GetBarycentric(vec2 v1, vec2 v2, vec2 v3, vec2 p)
 {
@@ -115,15 +115,16 @@ void TraceMesh(MeshObject mesh, PointLightObject light, vec2 uv1, bool add)
         {
             // continue;
         }
-        // ray.direction = SampleHemisphere(ray.direction, 0);
         // ray.direction = SampleHemisphere(normalize(light.position.xyz - ray.origin.xyz).xyz, 1);
         // ray.direction = normalize(light.position.xyz - ray.origin.xyz).xyz;
         ray.origin = ray.origin.xyz + ray.direction * 0.001;
+        // vec3 rng = normalize((vec3(rand(), rand(), rand()) - 0.5) * 2);
         ray.direction = -ray.direction;
+        ray.direction = SampleHemisphere(ray.direction, 0.1);
         // ray.energy = light.color.rgb;
 
         vec3 result = vec3(0);
-        for (int i = 0; i < 2; i++)
+        for (int i = 0; i < 1; i++)
         {
             RayHit hit = Trace(ray);
             vec3 e = ray.energy;

@@ -11,6 +11,16 @@ mat3 GetTangentSpace(vec3 normal)
     return mat3(tangent, binormal, normal);
 }
 
+vec3 GetTangentFromNormal(vec3 normal)
+{
+    vec3 helper = vec3(1, 0, 0);
+    if (abs(normal.x) > 0.99)
+        helper = vec3(0, 0, 1);
+    
+    vec3 tangent = normalize(cross(normal, helper));
+    return tangent;
+}
+
 vec3 SampleHemisphere(vec3 normal, float alpha)
 {
     float cosTheta = pow(rand(), 1 / (alpha + 1));
@@ -199,14 +209,18 @@ vec3 Shade(inout Ray ray, RayHit hit)
         for (uint i = 0; i < lights.length(); i++)
         {
             vec3 dirLight2 = normalize(lights[i].position.xyz - hit.position);
+            // dirLight2 = GetTangentFromNormal(dirLight2);
+            // dirLight2 = SampleHemisphere(dirLight2, 0.1);
             vec3 lightOffset = (lights[i].position.xyz + dirLight2 * -0.25);
-            // dirLight2 = SampleHemisphere(dirLight2, 0);
             Ray shadowRay = CreateRay(hit.position + hit.normal * 0.001, dirLight2.xyz);
             RayHit shadowHit = Trace(shadowRay);
-            for (float j = 0; j <= 1.0; j+=1.0/4.0)
+            uint k = 0;
+            for (float j = 0; j <= lights[i].position.w; j+=lights[i].position.w/4.0)
             {
-                lightOffset = (lights[i].position.xyz + dirLight2 * -j);
+                vec3 rng = normalize((vec3(rand(), rand(), rand()) - 0.5) * 2);
+                lightOffset = (lights[i].position.xyz + rng * -j);
                 vec3 dirLight5 = normalize(lightOffset - hit.position);
+                // dirLight5 = SampleHemisphere(dirLight5, 0);
                 // dirLight5 = cross(dirLight5, dirLight2);
                 Ray shadowRay2 = CreateRay(hit.position + hit.normal * 0.001, dirLight5.xyz);
                 RayHit shadowHit2 = Trace(shadowRay2);
@@ -217,9 +231,12 @@ vec3 Shade(inout Ray ray, RayHit hit)
                     vec3 dirLight3 = normalize(lightOffset - shadowHit2.position);
                     v *= clamp(dot(-dirLight5.xyz, dirLight3.xyz), 0, 1);
                     att += v;
-                    att /= 2;
+                    // att /= 2;
                 }
+                k++;
             }
+            // att /= 4.0;
+            att /= k;
             dirLight2 = normalize(lightOffset - hit.position);
             Ray shadowRay2 = CreateRay(hit.position + hit.normal * 0.001, dirLight2.xyz);
             RayHit shadowHit2 = Trace(shadowRay2);
