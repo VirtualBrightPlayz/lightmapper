@@ -265,13 +265,13 @@ public class Program
             });
             using var addBuffer1 = gd.ResourceFactory.CreateBuffer(new BufferDescription((uint)Unsafe.SizeOf<Vector4>(), BufferUsage.UniformBuffer));
             gd.UpdateBuffer(addBuffer1, 0, new Vector4(0));
-            using var gfxTexture = gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(texture.Width, texture.Height, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.RenderTarget));
+            using var gfxTexture = gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(textureOut.Width, textureOut.Height, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.RenderTarget));
             using var gfxFramebuffer = gd.ResourceFactory.CreateFramebuffer(new FramebufferDescription(null, gfxTexture));
             using var gfxSampler = gd.ResourceFactory.CreateSampler(SamplerDescription.Linear);
 
             BindableResource[][] gfxResources = new BindableResource[][]
             {
-                new BindableResource[] { texture, gfxSampler, addBuffer1 },
+                new BindableResource[] { textureOut, gfxSampler, addBuffer1 },
             };
             List<ResourceLayout> gfxLayouts = new List<ResourceLayout>();
             List<ResourceSet> gfxSets = new List<ResourceSet>();
@@ -300,8 +300,8 @@ public class Program
                 gd.UpdateBuffer(buffer1, 0, paramz);
                 for (int i = 0; i < sets.Count; i++)
                     commandList.SetComputeResourceSet((uint)i, sets[i]);
-                commandList.Dispatch(texture.Width / 16, texture.Height / 16, 1);
-                // commandList.Dispatch(textureOut.Width / 16, textureOut.Height / 16, 1);
+                // commandList.Dispatch(texture.Width / 16, texture.Height / 16, 1);
+                commandList.Dispatch(textureOut.Width / 16, textureOut.Height / 16, 1);
 
                 commandList.SetFramebuffer(gfxFramebuffer);
                 commandList.SetPipeline(gfxPipeline);

@@ -199,25 +199,45 @@ vec3 Shade(inout Ray ray, RayHit hit)
         for (uint i = 0; i < lights.length(); i++)
         {
             vec3 dirLight2 = normalize(lights[i].position.xyz - hit.position);
+            vec3 lightOffset = (lights[i].position.xyz + dirLight2 * -0.25);
+            // dirLight2 = SampleHemisphere(dirLight2, 0);
             Ray shadowRay = CreateRay(hit.position + hit.normal * 0.001, dirLight2.xyz);
             RayHit shadowHit = Trace(shadowRay);
+            for (float j = 0; j <= 1.0; j+=1.0/4.0)
+            {
+                lightOffset = (lights[i].position.xyz + dirLight2 * -j);
+                vec3 dirLight5 = normalize(lightOffset - hit.position);
+                // dirLight5 = cross(dirLight5, dirLight2);
+                Ray shadowRay2 = CreateRay(hit.position + hit.normal * 0.001, dirLight5.xyz);
+                RayHit shadowHit2 = Trace(shadowRay2);
+                if (shadowHit2.dist < infinity)
+                {
+                    vec3 v = lights[i].color.rgb * atten(hit.position) * lights[i].color.a;
+                    // vec3 dirLight3 = normalize(lights[i].position.xyz - shadowHit2.position);
+                    vec3 dirLight3 = normalize(lightOffset - shadowHit2.position);
+                    v *= clamp(dot(-dirLight5.xyz, dirLight3.xyz), 0, 1);
+                    att += v;
+                    att /= 2;
+                }
+            }
+            dirLight2 = normalize(lightOffset - hit.position);
+            Ray shadowRay2 = CreateRay(hit.position + hit.normal * 0.001, dirLight2.xyz);
+            RayHit shadowHit2 = Trace(shadowRay2);
             // if (shadowHit.dist < lights[i].position.w)
-            if (shadowHit.dist < infinity /*&& dot(dirLight2.xyz, shadowHit.normal) < 0*/)
+            if (shadowHit.dist < infinity && false /*&& dot(dirLight2.xyz, shadowHit.normal) < 0*/)
             {
                 vec3 v = lights[i].color.rgb * atten(hit.position) * lights[i].color.a;
                 vec3 dirLight3 = normalize(lights[i].position.xyz - shadowHit.position);
                 v *= clamp(dot(-dirLight2.xyz, dirLight3.xyz), 0, 1);
-                att += v;
-                // albedo += v;
-                // ray.energy += v;
-                // att += -(1.0 / (hit.dist * hit.dist));
-                // albedo += lights[i].color.rgb * (1.0 / (hit.dist * hit.dist));
-                // ray.energy += lights[i].color.rgb * (1.0 / (hit.dist * hit.dist));
-
-                // att += shadowHit.emission;
-                // albedo += shadowHit.emission;
-                // ray.energy += shadowHit.emission;
-                // return shadowHit.emission;
+                // att += v / 2;
+            }
+            if (shadowHit2.dist < infinity && false)
+            {
+                vec3 v = lights[i].color.rgb * atten(hit.position) * lights[i].color.a;
+                // vec3 dirLight3 = normalize(lights[i].position.xyz - shadowHit2.position);
+                vec3 dirLight3 = normalize(lightOffset - shadowHit2.position);
+                v *= clamp(dot(-dirLight2.xyz, dirLight3.xyz), 0, 1);
+                // att += v / 2;
             }
         }
         // float att = (1.0 / (hit.dist * hit.dist));

@@ -54,7 +54,8 @@ float atten(vec3 pos)
     float att = 0;
     for (uint i = 0; i < lights.length(); i++)
     {
-        float d = distance(lights[i].position.xyz, pos);
+        vec3 dir = normalize(pos - lights[i].position.xyz);
+        float d = distance(lights[i].position.xyz + dir * 0.25, pos);
         if (d <= 0)
             continue;
         float v = (lights[i].position.w / (d * d));
@@ -151,7 +152,7 @@ void TraceMesh(MeshObject mesh, PointLightObject light, vec2 uv1, bool add)
         }
         */
         minmax = 0;
-        int j = (uvw.x >= -minmax && uvw.x <= 1+minmax && uvw.y >= -minmax && uvw.y <= 1+minmax && uvw.z >= -minmax && uvw.z <= 1+minmax) ? 0 : 1;
+        int j = (uvw.x >= -minmax && uvw.x <= 1+minmax && uvw.y >= -minmax && uvw.y <= 1+minmax && uvw.z >= -minmax && uvw.z <= 1+minmax) ? 0 : 0;
         int k = (j * 2 + 1);
         k *= k;
         for (int y = -j; y <= j; y++)
