@@ -32,7 +32,11 @@ layout(std430, set = 0, binding = 5) readonly buffer Indices
 {
     vec4 meshIndices[];
 };
-layout(set = 0, binding = 6, rgba32f) uniform image2D outTex;
+layout(std430, set = 0, binding = 6) readonly buffer PointLights
+{
+    PointLightObject lights[];
+};
+layout(set = 0, binding = 7, rgba32f) uniform image2D outTex;
 
 float seed = 0;
 float rand()
@@ -43,6 +47,21 @@ float rand()
 }
 
 vec3 lastShade = vec3(1);
+
+float atten(vec3 pos)
+{
+    float att = 0;
+    for (uint i = 0; i < lights.length(); i++)
+    {
+        float d = distance(lights[i].position.xyz, pos);
+        if (d <= 0)
+            continue;
+        float v = (lights[i].position.w / (d * d));
+        if (v > 0)
+            att += v;
+    }
+    return att;
+}
 
 #include "ray.glsl"
 #include "rayhit.glsl"
@@ -55,11 +74,12 @@ void CS()
     seed = inSeed.x;
     ivec2 size = imageSize(tex);
     ivec2 sizeOut = imageSize(outTex);
-    vec2 uv = vec2((id.xy + vec2(0.5, 0.5)) / size.xy * 2 - 1);
+    vec2 pixelOffset = vec2(rand() - 0.5, rand() - 0.5);
+    vec2 uv = vec2((id.xy + pixelOffset) / size.xy * 2 - 1);
     Ray ray = CreateCameraRay(uv);
     vec3 result = vec3(0);
     vec2 uv1 = vec2(-1);
-    for (int i = 0; i < 8; i++)
+    for (int i = 0; i < 2; i++)
     {
         RayHit hit = Trace(ray, ray.energy, true);
         // uv1 = vec2(-1);

@@ -33,7 +33,11 @@ layout(std430, set = 0, binding = 5) readonly buffer Indices
 {
     vec4 meshIndices[];
 };
-layout(set = 0, binding = 6, rgba32f) uniform image2D outTex;
+layout(std430, set = 0, binding = 6) readonly buffer PointLights
+{
+    PointLightObject lights[];
+};
+layout(set = 0, binding = 7, rgba32f) uniform image2D outTex;
 
 float seed = 0;
 float rand()
@@ -45,10 +49,25 @@ float rand()
 
 vec3 lastShade = vec3(1);
 
+float atten(vec3 pos)
+{
+    float att = 0;
+    for (uint i = 0; i < lights.length(); i++)
+    {
+        float d = distance(lights[i].position.xyz, pos);
+        if (d <= 0)
+            continue;
+        float v = (lights[i].position.w / (d * d));
+        if (v > 0)
+            att += v;
+    }
+    return att;
+}
+
 #include "ray.glsl"
 #include "rayhit.glsl"
 #include "intersect.glsl"
-#line 52 "lightmap.glsl"
+#line 71 "lightmap.glsl"
 
 vec3 GetBarycentric(vec2 v1, vec2 v2, vec2 v3, vec2 p)
 {
@@ -73,7 +92,7 @@ Ray CreateRayFromTriangle(mat4 model, mat4 invModel, MeshVertex v0, MeshVertex v
     return ray;
 }
 
-void TraceMesh(MeshObject mesh, vec2 uv1)
+void TraceMesh(MeshObject mesh, PointLightObject light, vec2 uv1, bool add)
 {
     uint offset = uint(mesh.indices.x);
     uint count = offset + uint(mesh.indices.y);
@@ -83,12 +102,25 @@ void TraceMesh(MeshObject mesh, vec2 uv1)
         MeshVertex v1 = meshVertices[uint(meshIndices[i+1].x)];
         MeshVertex v2 = meshVertices[uint(meshIndices[i+2].x)];
         vec3 uvw = GetBarycentric(v0.uv01.zw, v1.uv01.zw, v2.uv01.zw, uv1);
-        if (!(uvw.x >= 0 && uvw.x <= 1 && uvw.y >= 0 && uvw.y <= 1 && uvw.z >= 0 && uvw.z <= 1))
+        float minmax = 0.0025;
+        if (!(uvw.x >= -minmax && uvw.x <= 1+minmax && uvw.y >= -minmax && uvw.y <= 1+minmax && uvw.z >= -minmax && uvw.z <= 1+minmax))
         {
             continue;
         }
         Ray ray = CreateRayFromTriangle(mesh.model, mesh.invModel, v0, v1, v2, uvw);
-        
+        vec3 wpos = ray.origin.xyz;
+        float d = distance(ray.origin.xyz, light.position.xyz);
+        if (light.position.w > 0 && d > light.position.w)
+        {
+            // continue;
+        }
+        // ray.direction = SampleHemisphere(ray.direction, 0);
+        // ray.direction = SampleHemisphere(normalize(light.position.xyz - ray.origin.xyz).xyz, 1);
+        // ray.direction = normalize(light.position.xyz - ray.origin.xyz).xyz;
+        ray.origin = ray.origin.xyz + ray.direction * 0.001;
+        ray.direction = -ray.direction;
+        // ray.energy = light.color.rgb;
+
         vec3 result = vec3(0);
         for (int i = 0; i < 2; i++)
         {
@@ -100,14 +132,45 @@ void TraceMesh(MeshObject mesh, vec2 uv1)
             if (ray.energy.x <= 0.0 && ray.energy.y <= 0.0 && ray.energy.z <= 0.0)
                 break;
         }
+        if (light.position.w > 0)
+        {
+            // if (d > 0 && false)
+                // result *= vec3((light.position.w / (d * d)));
+        }
+        // ivec2 sizeOut = imageSize(outTex);
+        // ivec2 pos = ivec2(round(uv1.x * sizeOut.x), round(uv1.y * sizeOut.y));
+        // vec4 color = imageLoad(outTex, pos);
+        /*
+        if (add || true)
+        {
+            imageStore(outTex, pos, vec4(result + color.xyz, 1));
+        }
+        else
+        {
+            imageStore(outTex, pos, vec4(result, 1));
+        }
+        */
+        minmax = 0;
+        int j = (uvw.x >= -minmax && uvw.x <= 1+minmax && uvw.y >= -minmax && uvw.y <= 1+minmax && uvw.z >= -minmax && uvw.z <= 1+minmax) ? 0 : 1;
+        int k = (j * 2 + 1);
+        k *= k;
+        for (int y = -j; y <= j; y++)
+        for (int x = -j; x <= j; x++)
         {
             ivec2 sizeOut = imageSize(outTex);
-            imageStore(outTex, ivec2(uv1.x * sizeOut.x, uv1.y * sizeOut.y), vec4(result, 1));
+            ivec2 pos = ivec2(round(uv1.x * sizeOut.x), round(uv1.y * sizeOut.y)) + ivec2(x, y);
+            vec4 color = imageLoad(outTex, pos);
+            if (color.a <= 0 || j == 0)
+                imageStore(outTex, pos, vec4(result /*+ color.rgb*/, 1));
         }
+        /*
+        for (int y = -j; y <= j; y++)
+        for (int x = -j; x <= j; x++)
         {
             ivec2 sizeOut = imageSize(tex);
-            imageStore(tex, ivec2(uv1.x * sizeOut.x, uv1.y * sizeOut.y), vec4(result, 1));
+            imageStore(tex, ivec2(uv1.x * sizeOut.x, uv1.y * sizeOut.y) + ivec2(x, y), vec4(1-result, 1));
         }
+        */
     }
 }
 
@@ -157,8 +220,11 @@ void main()
     // if (i >= 0 && i < meshes.length())
     for (uint i = 0; i < meshes.length(); i++)
     {
-        TraceMesh(meshes[i], uv1);
-        // break;
+        for (uint j = 0; j < lights.length(); j++)
+        {
+            TraceMesh(meshes[i], lights[j], uv1, i != 0 && j != 0);
+            // break;
+        }
     }
     // CS();
 }

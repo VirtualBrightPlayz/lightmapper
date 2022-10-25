@@ -7,6 +7,12 @@ struct MeshObject
     vec4 indices;
 };
 
+struct PointLightObject
+{
+    vec4 position;
+    vec4 color;
+};
+
 struct MeshVertex
 {
     vec4 position;

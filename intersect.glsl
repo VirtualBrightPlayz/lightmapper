@@ -129,7 +129,7 @@ void IntersectMeshObject(Ray ray, inout RayHit bestHit, MeshObject mesh, vec4 co
                 bestHit.normal = normalize(u * n1 + v * n2 + w * n0);
                 // bestHit.normal = normalize(cross(v1 - v0, v2 - v0));
                 bestHit.albedo = vec3(0.8);
-                bestHit.specular = vec3(0.6);
+                bestHit.specular = vec3(0.4);
                 bestHit.uv1 = u * u1 + v * u2 + w * u0;
                 // bestHit.specular = vec3(1, 0.4, 0.2);
                 if (color.w != 0)
@@ -194,6 +194,35 @@ vec3 Shade(inout Ray ray, RayHit hit)
     if (hit.dist < infinity)
     {
         vec3 albedo = min(1 - hit.specular, hit.albedo);
+        // float att = atten(hit.position);
+        vec3 att = vec3(0);
+        for (uint i = 0; i < lights.length(); i++)
+        {
+            vec3 dirLight2 = normalize(lights[i].position.xyz - hit.position);
+            Ray shadowRay = CreateRay(hit.position + hit.normal * 0.001, dirLight2.xyz);
+            RayHit shadowHit = Trace(shadowRay);
+            // if (shadowHit.dist < lights[i].position.w)
+            if (shadowHit.dist < infinity /*&& dot(dirLight2.xyz, shadowHit.normal) < 0*/)
+            {
+                vec3 v = lights[i].color.rgb * atten(hit.position) * lights[i].color.a;
+                vec3 dirLight3 = normalize(lights[i].position.xyz - shadowHit.position);
+                v *= clamp(dot(-dirLight2.xyz, dirLight3.xyz), 0, 1);
+                att += v;
+                // albedo += v;
+                // ray.energy += v;
+                // att += -(1.0 / (hit.dist * hit.dist));
+                // albedo += lights[i].color.rgb * (1.0 / (hit.dist * hit.dist));
+                // ray.energy += lights[i].color.rgb * (1.0 / (hit.dist * hit.dist));
+
+                // att += shadowHit.emission;
+                // albedo += shadowHit.emission;
+                // ray.energy += shadowHit.emission;
+                // return shadowHit.emission;
+            }
+        }
+        // float att = (1.0 / (hit.dist * hit.dist));
+        // albedo *= att;
+        // ray.energy *= att;
         float specChance = energy(hit.specular);
         float diffChance = energy(albedo);
         float sum = specChance + diffChance;
@@ -222,7 +251,7 @@ vec3 Shade(inout Ray ray, RayHit hit)
         {
             ray.energy = vec3(0);
         }
-        return hit.emission;
+        return hit.emission + att;
 
 
         ray.origin = hit.position + hit.normal * 0.001;
@@ -252,7 +281,7 @@ vec3 Shade(inout Ray ray, RayHit hit)
         ray.energy = vec3(0);
         float theta = acos(ray.direction.y) / -PI;
         float phi = atan(ray.direction.x, -ray.direction.z) * 2 / -PI * 0.5;
-        return vec3(1);
+        // return vec3(1);
         // return ray.direction * 0.5 + 0.5;
         return vec3(0);
     }
