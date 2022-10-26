@@ -144,7 +144,10 @@ void IntersectMeshObject(Ray ray, inout RayHit bestHit, MeshObject mesh, vec4 co
                 // bestHit.specular = vec3(1, 0.4, 0.2);
                 if (color.w != 0)
                 {
-                    ivec2 sizeOut = imageSize(outTex);
+                    // ivec2 sizeOut = imageSize(tex);
+                    // ivec2 pos2 = ivec2(round(bestHit.uv1.x * sizeOut.x), round(bestHit.uv1.y * sizeOut.y));
+                    // vec4 l = imageLoad(tex, pos2);
+                    // imageStore(tex, pos2, vec4(normalize((ray.direction * 0.5 + 0.5) + l.rgb), 1));
                     // imageStore(outTex, ivec2(bestHit.uv1.x * sizeOut.x, bestHit.uv1.y * sizeOut.y), vec4(color.xyz, 1));
                 }
             }
@@ -185,6 +188,11 @@ RayHit Trace(Ray ray, vec3 color, bool canShade)
     }
     if (canShade)
     {
+        // ivec2 sizeOut = imageSize(tex);
+        // ivec2 pos2 = ivec2(round(bestHit.uv1.x * sizeOut.x), round(bestHit.uv1.y * sizeOut.y));
+        // vec4 l = imageLoad(tex, pos2);
+        // imageStore(tex, pos2, vec4(normalize((ray.direction * 0.5 + 0.5) + l.rgb), 1));
+        // imageStore(tex, pos2, vec4(ray.direction * 0.5 + 0.5, 1));
         // Ray r = CreateRay(bestHit.position, bestHit.normal);
         // vec3 s = Shade(r, bestHit);
         // ivec2 sizeOut = imageSize(outTex);
@@ -198,9 +206,10 @@ RayHit Trace(Ray ray)
     return Trace(ray, vec3(0), false);
 }
 
-vec3 Shade(inout Ray ray, RayHit hit)
+vec3 Shade(inout Ray ray, RayHit hit, inout vec3 normal)
 {
     vec4 dirLight = vec4(0, 1, 0, 1);
+    // normal = vec3(0);
     if (hit.dist < infinity)
     {
         vec3 albedo = min(1 - hit.specular, hit.albedo);
@@ -208,58 +217,50 @@ vec3 Shade(inout Ray ray, RayHit hit)
         vec3 att = vec3(0);
         for (uint i = 0; i < lights.length(); i++)
         {
+            if (distance(lights[i].position.xyz, hit.position) > lights[i].position.w)
+            {
+                continue;
+            }
             vec3 dirLight2 = normalize(lights[i].position.xyz - hit.position);
-            // dirLight2 = GetTangentFromNormal(dirLight2);
-            // dirLight2 = SampleHemisphere(dirLight2, 0.1);
             vec3 lightOffset = (lights[i].position.xyz + dirLight2 * -0.25);
             Ray shadowRay = CreateRay(hit.position + hit.normal * 0.001, dirLight2.xyz);
             RayHit shadowHit = Trace(shadowRay);
             uint k = 0;
-            for (float j = 0; j <= lights[i].position.w; j+=lights[i].position.w/4.0)
+            vec3 att2 = vec3(0);
+            for (float j = 0; j <= lights[i].data.x; j+=lights[i].data.x/4.0) // 4.0
             {
                 vec3 rng = normalize((vec3(rand(), rand(), rand()) - 0.5) * 2);
-                // vec3 rng = normalize(dirLight2 * rand());
-                // vec3 rng = dirLight2;
                 lightOffset = (lights[i].position.xyz + rng * -j);
                 vec3 dirLight5 = normalize(lightOffset - hit.position);
-                // dirLight5 = SampleHemisphere(dirLight5, 0);
-                // dirLight5 = cross(dirLight5, dirLight2);
                 Ray shadowRay2 = CreateRay(hit.position + hit.normal * 0.001, dirLight5.xyz);
                 RayHit shadowHit2 = Trace(shadowRay2);
                 if (shadowHit2.dist < infinity)
                 {
-                    vec3 v = lights[i].color.rgb * atten(hit.position) * lights[i].color.a;
-                    // vec3 dirLight3 = normalize(lights[i].position.xyz - shadowHit2.position);
+                    vec3 v = lights[i].color.rgb * atten(vec4(lightOffset, lights[i].position.w), hit.position) * lights[i].color.a;
                     vec3 dirLight3 = normalize(lightOffset - shadowHit2.position);
                     v *= clamp(dot(-dirLight5.xyz, dirLight3.xyz), 0, 1);
-                    att += v;
-                    att /= 2;
+                    att2 += v;
+                    // normal += dirLight5 * clamp(dot(-dirLight5.xyz, dirLight3.xyz), 0, 1);
+                    // normal /= 2;
+                    // normal = normalize(normal);
                 }
                 k++;
             }
-            // att /= 4.0;
-            // att /= k;
-            dirLight2 = normalize(lightOffset - hit.position);
+            att2 /= k;
+            att += att2;
             Ray shadowRay2 = CreateRay(hit.position + hit.normal * 0.001, dirLight2.xyz);
             RayHit shadowHit2 = Trace(shadowRay2);
-            // if (shadowHit.dist < lights[i].position.w)
-            if (shadowHit.dist < infinity && false /*&& dot(dirLight2.xyz, shadowHit.normal) < 0*/)
+            if (shadowHit.dist < infinity)
             {
-                vec3 v = lights[i].color.rgb * atten(hit.position) * lights[i].color.a;
+                vec3 v = lights[i].color.rgb * atten(lights[i].position.xyzw, hit.position) * lights[i].color.a;
                 vec3 dirLight3 = normalize(lights[i].position.xyz - shadowHit.position);
-                v *= clamp(dot(-dirLight2.xyz, dirLight3.xyz), 0, 1);
+                // v *= clamp(dot(-dirLight2.xyz, dirLight3.xyz), 0, 1);
                 // att += v / 2;
-            }
-            if (shadowHit2.dist < infinity && false)
-            {
-                vec3 v = lights[i].color.rgb * atten(hit.position) * lights[i].color.a;
-                // vec3 dirLight3 = normalize(lights[i].position.xyz - shadowHit2.position);
-                vec3 dirLight3 = normalize(lightOffset - shadowHit2.position);
-                v *= clamp(dot(-dirLight2.xyz, dirLight3.xyz), 0, 1);
-                // att += v / 2;
+                // normal += dirLight2 * clamp(dot(-dirLight2.xyz, dirLight3.xyz), 0, 1);
+                // normal /= 2;
+                // normal = normalize(normal);
             }
         }
-        // float att = (1.0 / (hit.dist * hit.dist));
         // albedo *= att;
         // ray.energy *= att;
         float specChance = energy(hit.specular);
@@ -284,7 +285,7 @@ vec3 Shade(inout Ray ray, RayHit hit)
         {
             ray.origin = hit.position + hit.normal * 0.001;
             ray.direction = SampleHemisphere(hit.normal, 1);
-            ray.energy *= (1.0 / diffChance) * albedo;// * sdot(hit.normal, ray.direction);
+            ray.energy *= (1.0 / diffChance) * albedo;
         }
         else
         {

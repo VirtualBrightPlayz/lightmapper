@@ -11,6 +11,7 @@ struct PointLightObject
 {
     vec4 position;
     vec4 color;
+    vec4 data;
 };
 
 struct MeshVertex

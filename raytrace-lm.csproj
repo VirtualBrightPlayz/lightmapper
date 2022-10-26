@@ -13,12 +13,10 @@
   </PropertyGroup> -->
 
   <ItemGroup>
-    <PackageReference Include="ILGPU" Version="1.2.0" />
     <PackageReference Include="SharpGLTF.Core" Version="1.0.0-alpha0027" />
     <PackageReference Include="SharpGLTF.Toolkit" Version="1.0.0-alpha0027" />
     <PackageReference Include="Veldrid" Version="4.8.0" />
     <PackageReference Include="Veldrid.ImageSharp" Version="4.8.0" />
-    <PackageReference Include="Veldrid.ImGui" Version="5.72.0" />
     <PackageReference Include="Veldrid.SPIRV" Version="1.0.15" />
     <PackageReference Include="Veldrid.StartupUtilities" Version="4.8.0" />
   </ItemGroup>

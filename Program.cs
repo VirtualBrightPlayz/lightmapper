@@ -15,9 +15,6 @@ using Veldrid.Sdl2;
 using Veldrid.SPIRV;
 using Veldrid.StartupUtilities;
 
-// [assembly: CLSCompliant(true)]
-// [assembly: InternalsVisibleTo(ILGPU.Context.RuntimeAssemblyName)]
-
 public class Program
 {
     [StructLayout(LayoutKind.Sequential)]
@@ -65,6 +62,7 @@ public class Program
     {
         public Vector4 position;
         public Vector4 color;
+        public Vector4 data;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -82,30 +80,114 @@ public class Program
         public Vector2 uv;
     }
 
+    public record ExternalLightData(float size);
+
     public static void Main(string[] args)
     {
-        uint samples = 32;
-        uint texSize = 1024;
-        Console.WriteLine("Begin");
+        uint samples = 4;
+        uint texSize = 512;
 
-        ModelRoot root = ModelRoot.Load("cube.glb");
-        var node = root.LogicalNodes.FirstOrDefault(x => x.Mesh != null);
-        var cam = root.LogicalNodes.FirstOrDefault(x => x.Camera != null);
-        var light = root.LogicalNodes.FirstOrDefault(x => x.PunctualLight != null);
-        var positions = node.Mesh.Primitives.SelectMany(x => x.GetVertexAccessor("POSITION").AsVector3Array()).ToArray();
-        var normals = node.Mesh.Primitives.SelectMany(x => x.GetVertexAccessor("NORMAL").AsVector3Array()).ToArray();
-        var uv0s = node.Mesh.Primitives.SelectMany(x => x.GetVertexAccessor("TEXCOORD_0").AsVector2Array()).ToArray();
-        var uv1s = node.Mesh.Primitives.SelectMany(x => x.GetVertexAccessor("TEXCOORD_1").AsVector2Array()).ToArray();
-        var indexes = node.Mesh.Primitives.SelectMany(x => x.GetTriangleIndices().SelectMany(x => new[] { x.A, x.B, x.C })).ToArray();
-        var vertices = new MeshVertex[positions.Length];
-        for (int i = 0; i < vertices.Length; i++)
+        string file = "cube.glb";
+        string fileOut = "out.png";
+        string renderOnly = "";
+        string localPath = Path.Combine(typeof(Program).Assembly.Location, "..");
+        for (int i = 0; i < args.Length - 1; i++)
         {
-            vertices[i] = new MeshVertex()
+            if (args[i].ToLower().Equals("-in"))
             {
-                position = new Vector4(positions[i], 1f),
-                normal = new Vector4(normals[i], 1f),
-                uv01 = new Vector4(uv0s[i].X, uv0s[i].Y, uv1s[i].X, uv1s[i].Y),
-            };
+                file = args[i + 1];
+            }
+            if (args[i].ToLower().Equals("-out"))
+            {
+                fileOut = args[i + 1];
+            }
+            if (args[i].ToLower().Equals("-render"))
+            {
+                renderOnly = args[i + 1];
+            }
+            if (args[i].ToLower().Equals("-samples"))
+            {
+                samples = uint.Parse(args[i + 1]);
+            }
+            if (args[i].ToLower().Equals("-texsize"))
+            {
+                texSize = uint.Parse(args[i + 1]);
+            }
+        }
+
+        Console.WriteLine("Begin");
+        ModelRoot root = ModelRoot.Load(file);
+        // var thing = root.LogicalNodes.Where(x => x.Mesh != null).SelectMany(x => x.Mesh.Primitives.SelectMany(x => x.GetVertexAccessor("POSITION").AsVector3Array())).ToArray();
+        // var node = root.LogicalNodes.FirstOrDefault(x => x.Mesh != null);
+        // var cam = root.LogicalNodes.FirstOrDefault(x => x.Camera != null);
+        // var light = root.LogicalNodes.FirstOrDefault(x => x.PunctualLight != null);
+        // var positions = node.Mesh.Primitives.SelectMany(x => x.GetVertexAccessor("POSITION").AsVector3Array()).ToArray();
+        // var normals = node.Mesh.Primitives.SelectMany(x => x.GetVertexAccessor("NORMAL").AsVector3Array()).ToArray();
+        // var uv0s = node.Mesh.Primitives.SelectMany(x => x.GetVertexAccessor("TEXCOORD_0").AsVector2Array()).ToArray();
+        // var uv1s = node.Mesh.Primitives.SelectMany(x => x.GetVertexAccessor("TEXCOORD_1").AsVector2Array()).ToArray();
+        // var indexes = node.Mesh.Primitives.SelectMany(x => x.GetTriangleIndices().SelectMany(x => new[] { x.A, x.B, x.C })).ToArray();
+        var world = new World()
+        {
+            spheres = new Sphere[0],
+            meshes = new MeshObject[0],
+            meshVertices = new MeshVertex[0],
+            meshIndices = new Vector4[0],
+            lights = new PointLightObject[0],
+        };
+        {
+            List<MeshObject> objects = new List<MeshObject>();
+            List<MeshVertex> vertices = new List<MeshVertex>();
+            List<Vector4> indexes = new List<Vector4>();
+            List<PointLightObject> lights = new List<PointLightObject>();
+
+            foreach (var node in root.LogicalNodes.Where(x => x.Mesh != null))
+            {
+                var positions = node.Mesh.Primitives.SelectMany(x => x.GetVertexAccessor("POSITION").AsVector3Array()).ToArray();
+                var normals = node.Mesh.Primitives.SelectMany(x => x.GetVertexAccessor("NORMAL").AsVector3Array()).ToArray();
+                var uv0s = node.Mesh.Primitives.SelectMany(x => x.GetVertexAccessor("TEXCOORD_0").AsVector2Array()).ToArray();
+                var uv1s = node.Mesh.Primitives.SelectMany(x => x.GetVertexAccessor("TEXCOORD_1").AsVector2Array()).ToArray();
+                var inds = node.Mesh.Primitives.SelectMany(x => x.GetTriangleIndices().SelectMany(x => new[] { x.A, x.B, x.C })).Select(x => new Vector4(x + vertices.Count)).ToArray();
+
+                for (int i = 0; i < positions.Length; i++)
+                {
+                    vertices.Add(new MeshVertex()
+                    {
+                        position = new Vector4(positions[i], 1f),
+                        normal = new Vector4(normals[i], 1f),
+                        uv01 = new Vector4(uv0s[i].X, uv0s[i].Y, uv1s[i].X, uv1s[i].Y),
+                    });
+                }
+                Matrix4x4.Invert(node.WorldMatrix, out var invModel);
+                objects.Add(new MeshObject()
+                {
+                    model = node.WorldMatrix,
+                    invModel = invModel,
+                    indices = new Vector4(indexes.Count, inds.Length, !string.IsNullOrEmpty(renderOnly) && node.Mesh.Name != renderOnly ? 0 : 1, 0),
+                });
+                indexes.AddRange(inds);
+            }
+
+            foreach (var node in root.LogicalNodes.Where(x => x.PunctualLight != null))
+            {
+                ExternalLightData data = new ExternalLightData(0f);
+                try
+                {
+                    data = node.PunctualLight.Extras.Deserialize<ExternalLightData>();
+                }
+                catch
+                { }
+                lights.Add(new PointLightObject()
+                {
+                    position = new Vector4(node.WorldMatrix.Translation, node.PunctualLight.Range),
+                    color = new Vector4(node.PunctualLight.Color, node.PunctualLight.Intensity),
+                    data = new Vector4(data.size),
+                });
+            }
+
+            world.meshes = objects.ToArray();
+            world.meshVertices = vertices.ToArray();
+            world.meshIndices = indexes.ToArray();
+            world.lights = lights.ToArray();
         }
 
         WindowCreateInfo windowCI = new WindowCreateInfo()
@@ -123,78 +205,30 @@ public class Program
         {
             using var commandList = gd.ResourceFactory.CreateCommandList();
 
-            string[] text = File.ReadAllLines("lightmap.glsl");
+            string[] text = File.ReadAllLines(Path.Combine(localPath, "lightmap.glsl"));
             for (int i = 0; i < text.Length; i++)
             {
                 string tline = text[i].Trim();
                 if (tline.StartsWith("#include \""))
                 {
-                    text[i] = File.ReadAllText(tline.Substring("#include \"".Length, tline.Length - "#include \"".Length - 1));
+                    text[i] = File.ReadAllText(Path.Combine(localPath, tline.Substring("#include \"".Length, tline.Length - "#include \"".Length - 1)));
                 }
             }
 
             var result = SpirvCompilation.CompileCompute(Encoding.UTF8.GetBytes(string.Join(Environment.NewLine, text)), CrossCompileTarget.GLSL);
-            var result2 = SpirvCompilation.CompileVertexFragment(Encoding.UTF8.GetBytes(File.ReadAllText("add.vert")), Encoding.UTF8.GetBytes(File.ReadAllText("add.frag")), CrossCompileTarget.GLSL, new CrossCompileOptions(gd.BackendType == GraphicsBackend.OpenGL, gd.BackendType == GraphicsBackend.Vulkan));
+            var result2 = SpirvCompilation.CompileVertexFragment(Encoding.UTF8.GetBytes(File.ReadAllText(Path.Combine(localPath, "add.vert"))), Encoding.UTF8.GetBytes(File.ReadAllText(Path.Combine(localPath, "add.frag"))), CrossCompileTarget.GLSL, new CrossCompileOptions(gd.BackendType == GraphicsBackend.OpenGL, gd.BackendType == GraphicsBackend.Vulkan));
 
             Matrix4x4.Invert(Matrix4x4.CreatePerspectiveFieldOfView(90f * MathF.PI / 180f, 1f, 0.1f, 1000f), out var invProj);
             // Matrix4x4.Invert(cam.Camera.Matrix, out var invProj);
-            // Matrix4x4.Invert(Matrix4x4.CreateLookAt(new Vector3(0, 2, 5), new Vector3(0, 0, 0), -Vector3.UnitY), out var camView);
-            Matrix4x4.Invert(cam.WorldMatrix, out var camView);
-            camView = cam.WorldMatrix;
+            Matrix4x4.Invert(Matrix4x4.CreateLookAt(new Vector3(0, 2, 5), new Vector3(0, 0, 0), Vector3.UnitY), out var camView);
+            // Matrix4x4.Invert(cam.WorldMatrix, out var camView);
+            // camView = cam.WorldMatrix;
             camView = Matrix4x4.CreateScale(1f, -1f, 1f) * camView;
-            Matrix4x4.Invert(node.WorldMatrix, out var invModel);
             var paramz = new Params()
             {
                 view = camView,
                 invProj = invProj,
-                seed = new Vector4(Random.Shared.NextSingle()),
-            };
-            var world = new World()
-            {
-                /*
-                spheres = new Sphere[]
-                {
-                    new Sphere()
-                    {
-                        position = new Vector4(light.WorldMatrix.Translation, 1f),
-                        radius = Vector4.One * 0.1f,
-                        albedo = new Vector4(light.PunctualLight.Color, 1f),
-                        specular = new Vector4(light.PunctualLight.Color, 1f),
-                        emission = new Vector4(light.PunctualLight.Color, 1f),
-                    },
-                },
-                */
-                spheres = new Sphere[0],
-                /*spheres = new Sphere[]
-                {
-                    new Sphere()
-                    {
-                        position = new Vector4(0, 2, 0, 1),
-                        radius = Vector4.One,
-                        albedo = Vector4.One * 1f,
-                        specular = Vector4.One * 1f,
-                        emission = Vector4.One * 1f,
-                    },
-                },*/
-                meshes = new MeshObject[]
-                {
-                    new MeshObject()
-                    {
-                        model = node.WorldMatrix,
-                        invModel = invModel,
-                        indices = new Vector4(0, indexes.Length, 0, 0),
-                    },
-                },
-                meshVertices = vertices,
-                meshIndices = indexes.Select(x => new Vector4(x)).ToArray(),
-                lights = new PointLightObject[]
-                {
-                    new PointLightObject()
-                    {
-                        position = new Vector4(light.WorldMatrix.Translation, light.PunctualLight.Range),
-                        color = new Vector4(light.PunctualLight.Color, light.PunctualLight.Intensity),
-                    },
-                }
+                seed = Vector4.Zero,
             };
 
             // compute setup
@@ -231,8 +265,8 @@ public class Program
 
 
             // gfx setup
-            using var shader2Vert = gd.ResourceFactory.CreateFromSpirv(new ShaderDescription(ShaderStages.Vertex, Encoding.UTF8.GetBytes(File.ReadAllText("add.vert")), "main"));
-            using var shader2Frag = gd.ResourceFactory.CreateFromSpirv(new ShaderDescription(ShaderStages.Fragment, Encoding.UTF8.GetBytes(File.ReadAllText("add.frag")), "main"));
+            using var shader2Vert = gd.ResourceFactory.CreateFromSpirv(new ShaderDescription(ShaderStages.Vertex, Encoding.UTF8.GetBytes(File.ReadAllText(Path.Combine(localPath, "add.vert"))), "main"));
+            using var shader2Frag = gd.ResourceFactory.CreateFromSpirv(new ShaderDescription(ShaderStages.Fragment, Encoding.UTF8.GetBytes(File.ReadAllText(Path.Combine(localPath, "add.frag"))), "main"));
             using var vertexBuffer = gd.ResourceFactory.CreateBuffer(new BufferDescription((uint)Unsafe.SizeOf<Vertex>() * 4, BufferUsage.VertexBuffer));
             gd.UpdateBuffer(vertexBuffer, 0, new Vertex[]
             {
@@ -266,14 +300,14 @@ public class Program
                 3,
             });
             using var addBuffer1 = gd.ResourceFactory.CreateBuffer(new BufferDescription((uint)Unsafe.SizeOf<Vector4>(), BufferUsage.UniformBuffer));
-            gd.UpdateBuffer(addBuffer1, 0, new Vector4(0));
+            gd.UpdateBuffer(addBuffer1, 0, new Vector4(0, 0, textureOut.Width, textureOut.Height));
             using var gfxTexture = gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(textureOut.Width, textureOut.Height, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.RenderTarget));
             using var gfxFramebuffer = gd.ResourceFactory.CreateFramebuffer(new FramebufferDescription(null, gfxTexture));
             using var gfxSampler = gd.ResourceFactory.CreateSampler(SamplerDescription.Point);
 
             BindableResource[][] gfxResources = new BindableResource[][]
             {
-                new BindableResource[] { textureOut, gfxSampler, addBuffer1 },
+                new BindableResource[] { textureOut, gfxSampler, addBuffer1, texture },
             };
             List<ResourceLayout> gfxLayouts = new List<ResourceLayout>();
             List<ResourceSet> gfxSets = new List<ResourceSet>();
@@ -301,7 +335,10 @@ public class Program
                 try
                 {
                     if (Console.KeyAvailable)
+                    {
+                        Console.ReadKey();
                         break;
+                    }
                 }
                 catch
                 { }
@@ -313,7 +350,7 @@ public class Program
                 for (int i = 0; i < sets.Count; i++)
                     commandList.SetComputeResourceSet((uint)i, sets[i]);
                 // commandList.Dispatch(texture.Width / 16, texture.Height / 16, 1);
-                commandList.Dispatch(textureOut.Width / 16, textureOut.Height / 16, 1);
+                commandList.Dispatch(textureOut.Width / 16, textureOut.Height / 16, (uint)world.meshes.Length);
 
                 commandList.SetFramebuffer(gfxFramebuffer);
                 commandList.SetPipeline(gfxPipeline);
@@ -325,7 +362,7 @@ public class Program
                 else
                 {
                 }
-                gd.UpdateBuffer(addBuffer1, 0, new Vector4(k));
+                gd.UpdateBuffer(addBuffer1, 0, new Vector4(k, 0, textureOut.Width, textureOut.Height));
 
                 for (int i = 0; i < gfxSets.Count; i++)
                     commandList.SetGraphicsResourceSet((uint)i, gfxSets[i]);
@@ -342,6 +379,48 @@ public class Program
                 // window.PumpEvents();
             }
 
+            /*
+            commandList.Begin();
+            commandList.SetFramebuffer(gfxFramebuffer);
+            commandList.SetPipeline(gfxPipeline);
+            
+            gd.UpdateBuffer(addBuffer1, 0, new Vector4(samples, 0, textureOut.Width, textureOut.Height));
+
+            for (int i = 0; i < gfxSets.Count; i++)
+                commandList.SetGraphicsResourceSet((uint)i, gfxSets[i]);
+            commandList.SetVertexBuffer(0, vertexBuffer);
+            commandList.SetIndexBuffer(indexBuffer, IndexFormat.UInt16);
+            commandList.DrawIndexed(4);
+
+            commandList.CopyTexture(gfxTexture, textureOut);
+
+            commandList.End();
+            gd.SubmitCommands(commandList);
+            gd.WaitForIdle();
+            */
+
+            {
+                using var mapTexture = gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(gfxTexture.Width, gfxTexture.Height, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Staging));
+                commandList.Begin();
+                commandList.CopyTexture(gfxTexture, mapTexture);
+                commandList.End();
+                gd.SubmitCommands(commandList);
+                gd.WaitForIdle();
+
+                var view = gd.Map<Rgba32>(mapTexture, MapMode.Read);
+                Rgba32[] data = new Rgba32[view.Count];
+                for (int i = 0; i < view.Count; i++)
+                {
+                    data[i] = view[i];
+                    data[i].A = 255;
+                }
+                gd.Unmap(mapTexture);
+                using var img = SixLabors.ImageSharp.Image.LoadPixelData<Rgba32>(data, (int)mapTexture.Width, (int)mapTexture.Height);
+                using FileStream fs = File.OpenWrite(fileOut);
+                img.SaveAsPng(fs);
+            }
+
+            /*
             {
                 using var mapTexture = gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(texture.Width, texture.Height, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Staging));
                 commandList.Begin();
@@ -355,6 +434,7 @@ public class Program
                 for (int i = 0; i < view.Count; i++)
                 {
                     data[i] = view[i];
+                    data[i].A = 255;
                 }
                 gd.Unmap(mapTexture);
                 using var img = SixLabors.ImageSharp.Image.LoadPixelData<Rgba32>(data, (int)mapTexture.Width, (int)mapTexture.Height);
@@ -375,6 +455,7 @@ public class Program
                 for (int i = 0; i < view.Count; i++)
                 {
                     data[i] = view[i];
+                    data[i].A = 255;
                 }
                 gd.Unmap(mapTexture);
                 using var img = SixLabors.ImageSharp.Image.LoadPixelData<Rgba32>(data, (int)mapTexture.Width, (int)mapTexture.Height);
@@ -402,6 +483,7 @@ public class Program
                 using FileStream fs = File.OpenWrite("gfxTex.png");
                 img.SaveAsPng(fs);
             }
+            */
 
             for (int i = 0; i < layouts.Count; i++)
             {
