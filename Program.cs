@@ -23,6 +23,7 @@ public class Program
         public Matrix4x4 view;
         public Matrix4x4 invProj;
         public Vector4 seed;
+        public Vector4 offsetPixels;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -86,11 +87,13 @@ public class Program
     {
         uint samples = 4;
         uint texSize = 512;
+        uint baseTexSize = 64;
 
         string file = "cube.glb";
         string fileOut = "out.png";
         string renderOnly = "";
         string localPath = Path.Combine(typeof(Program).Assembly.Location, "..");
+        localPath = Directory.GetCurrentDirectory();
         for (int i = 0; i < args.Length - 1; i++)
         {
             if (args[i].ToLower().Equals("-in"))
@@ -112,6 +115,10 @@ public class Program
             if (args[i].ToLower().Equals("-texsize"))
             {
                 texSize = uint.Parse(args[i + 1]);
+            }
+            if (args[i].ToLower().Equals("-basetexsize"))
+            {
+                baseTexSize = uint.Parse(args[i + 1]);
             }
         }
 
@@ -169,7 +176,7 @@ public class Program
 
             foreach (var node in root.LogicalNodes.Where(x => x.PunctualLight != null))
             {
-                ExternalLightData data = new ExternalLightData(0f);
+                ExternalLightData data = new ExternalLightData(0.01f);
                 try
                 {
                     data = node.PunctualLight.Extras.Deserialize<ExternalLightData>();
@@ -329,9 +336,9 @@ public class Program
             // while (window.Exists)
             for (int k = 0; k < samples; k++)
             {
-                Console.WriteLine($"{k}/{samples} Done");
+                Console.WriteLine($"Sample {k}/{samples} Done");
                 Console.Out.Flush();
-                Thread.Sleep(100);
+                // Thread.Sleep(100);
                 try
                 {
                     if (Console.KeyAvailable)
@@ -343,15 +350,38 @@ public class Program
                 catch
                 { }
                 paramz.seed = new Vector4(Random.Shared.NextSingle());
-                commandList.Begin();
 
+                commandList.Begin();
                 commandList.SetPipeline(pipeline);
-                gd.UpdateBuffer(buffer1, 0, paramz);
+                commandList.UpdateBuffer(buffer1, 0, paramz);
                 for (int i = 0; i < sets.Count; i++)
                     commandList.SetComputeResourceSet((uint)i, sets[i]);
-                // commandList.Dispatch(texture.Width / 16, texture.Height / 16, 1);
-                commandList.Dispatch(textureOut.Width / 16, textureOut.Height / 16, (uint)world.meshes.Length);
+                commandList.End();
+                gd.SubmitCommands(commandList);
+                gd.WaitForIdle();
 
+                for (int i = 0; i < textureOut.Width+(int)baseTexSize*8; i+=(int)baseTexSize*8)
+                {
+                    for (int i2 = 0; i2 < textureOut.Height+(int)baseTexSize*8; i2+=(int)baseTexSize*8)
+                    {
+                        commandList.Begin();
+                        commandList.SetPipeline(pipeline);
+                        for (int j = 0; j < sets.Count; j++)
+                            commandList.SetComputeResourceSet((uint)j, sets[j]);
+                        commandList.Dispatch(baseTexSize / 8, baseTexSize / 8, (uint)world.meshes.Length);
+                        var paramz2 = paramz;
+                        paramz2.offsetPixels = new Vector4(i, i2, 0, 0);
+                        // commandList.UpdateBuffer(buffer1, (uint)(Unsafe.SizeOf<Matrix4x4>() * 2 + Unsafe.SizeOf<Vector4>() * 1), paramz2.offsetPixels);
+                        commandList.UpdateBuffer(buffer1, 0, paramz2);
+                        commandList.End();
+                        gd.SubmitCommands(commandList);
+                        gd.WaitForIdle();
+                        Thread.Sleep(50);
+                        Console.WriteLine($"Render ({baseTexSize / 8})({i},{i2}) Done");
+                    }
+                }
+
+                commandList.Begin();
                 commandList.SetFramebuffer(gfxFramebuffer);
                 commandList.SetPipeline(gfxPipeline);
 
@@ -362,7 +392,7 @@ public class Program
                 else
                 {
                 }
-                gd.UpdateBuffer(addBuffer1, 0, new Vector4(k, 0, textureOut.Width, textureOut.Height));
+                commandList.UpdateBuffer(addBuffer1, 0, new Vector4(k, 0, textureOut.Width, textureOut.Height));
 
                 for (int i = 0; i < gfxSets.Count; i++)
                     commandList.SetGraphicsResourceSet((uint)i, gfxSets[i]);

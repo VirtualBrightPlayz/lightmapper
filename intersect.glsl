@@ -47,6 +47,23 @@ float sdot(vec3 x, vec3 y)
     return sdot(x, y, 1);
 }
 
+bool CheckAABB(Ray ray, vec3 dir_inv, AABB aabb)
+{
+    float tmin = 0.0;
+    float tmax = infinity;
+
+    for (int i = 0; i < 3; i++)
+    {
+        float t1 = (aabb.min_pos[i] - ray.origin[i]) * dir_inv[i];
+        float t2 = (aabb.max_pos[i] - ray.origin[i]) * dir_inv[i];
+
+        tmin = max(tmin, min(min(t1, t2), tmax));
+        tmax = min(tmax, max(max(t1, t2), tmin));
+    }
+
+    return tmin < tmax;
+}
+
 void IntersectGroundPlane(Ray ray, inout RayHit bestHit)
 {
     float t = -ray.origin.y / ray.direction.y;
@@ -127,6 +144,41 @@ void IntersectMeshObject(Ray ray, inout RayHit bestHit, MeshObject mesh, vec4 co
         vec2 u0 = meshVertices[uint(meshIndices[i].x)].uv01.zw;
         vec2 u1 = meshVertices[uint(meshIndices[i+1].x)].uv01.zw;
         vec2 u2 = meshVertices[uint(meshIndices[i+2].x)].uv01.zw;
+
+        AABB ab;
+        // float part = 1.0 / 3.0;
+        // vec3 norm = normalize(part * n1 + part * n2 + part * n0);
+        float x_max = max(max(v0.x, v1.x), v2.x);
+        float y_max = max(max(v0.y, v1.y), v2.y);
+        float z_max = max(max(v0.z, v1.z), v2.z);
+        float x_min = min(min(v0.x, v1.x), v2.x);
+        float y_min = min(min(v0.y, v1.y), v2.y);
+        float z_min = min(min(v0.z, v1.z), v2.z);
+        // float len0 = length(v0);
+        /*
+        float len1 = dot(v0, v0 - v1);
+        if (len1 > 0)
+        {
+            ab.max_pos = v1;
+        }
+        else if (dot(v0, v0 - v2) > 0)
+        {
+            ab.max_pos = v2
+        }
+        else
+        {
+            ab.max_pos = v0;
+        }
+        */
+
+        ab.min_pos.xyz = vec3(x_min, y_min, z_min);
+        ab.max_pos.xyz = vec3(x_max, y_max, z_max);
+
+
+        if (CheckAABB(ray, 1.0 / ray.direction.xyz, ab))
+        {
+            // continue;
+        }
 
         float t, u, v;
         if (IntersectTriangle_MT97(ray, v0, v1, v2, t, u, v))
@@ -226,11 +278,14 @@ vec3 Shade(inout Ray ray, RayHit hit, inout vec3 normal)
             Ray shadowRay = CreateRay(hit.position + hit.normal * 0.001, dirLight2.xyz);
             RayHit shadowHit = Trace(shadowRay);
             uint k = 0;
+            // /*
             vec3 att2 = vec3(0);
             for (float j = 0; j <= lights[i].data.x; j+=lights[i].data.x/4.0) // 4.0
             {
                 vec3 rng = normalize((vec3(rand(), rand(), rand()) - 0.5) * 2);
-                lightOffset = (lights[i].position.xyz + rng * -j);
+                // vec3 rng = dirLight2;
+                // vec3 rng = SampleHemisphere(dirLight2, 0);
+                lightOffset = (lights[i].position.xyz - rng);
                 vec3 dirLight5 = normalize(lightOffset - hit.position);
                 Ray shadowRay2 = CreateRay(hit.position + hit.normal * 0.001, dirLight5.xyz);
                 RayHit shadowHit2 = Trace(shadowRay2);
@@ -248,14 +303,13 @@ vec3 Shade(inout Ray ray, RayHit hit, inout vec3 normal)
             }
             att2 /= k;
             att += att2;
-            Ray shadowRay2 = CreateRay(hit.position + hit.normal * 0.001, dirLight2.xyz);
-            RayHit shadowHit2 = Trace(shadowRay2);
+            // */
             if (shadowHit.dist < infinity)
             {
                 vec3 v = lights[i].color.rgb * atten(lights[i].position.xyzw, hit.position) * lights[i].color.a;
                 vec3 dirLight3 = normalize(lights[i].position.xyz - shadowHit.position);
-                // v *= clamp(dot(-dirLight2.xyz, dirLight3.xyz), 0, 1);
-                // att += v / 2;
+                v *= clamp(dot(-dirLight2.xyz, dirLight3.xyz), 0, 1);
+                // att += v;
                 // normal += dirLight2 * clamp(dot(-dirLight2.xyz, dirLight3.xyz), 0, 1);
                 // normal /= 2;
                 // normal = normalize(normal);
