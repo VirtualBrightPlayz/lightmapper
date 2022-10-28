@@ -8,6 +8,7 @@
 #include "inputs.glsl"
 #include "sphere.glsl"
 #include "meshobject.glsl"
+#include "aabb.glsl"
 
 layout(set = 0, binding = 0, rgba32f) uniform writeonly image2D tex;
 layout(set = 0, binding = 1) uniform Params
@@ -15,6 +16,7 @@ layout(set = 0, binding = 1) uniform Params
     mat4 view;
     mat4 invProj;
     vec4 inSeed;
+    vec4 offsetPixels;
 };
 layout(std430, set = 0, binding = 2) readonly buffer Spheres
 {
@@ -48,16 +50,18 @@ float rand()
 
 vec3 lastShade = vec3(1);
 
-float atten(vec3 pos)
+float atten(vec4 lightPos, vec3 pos)
 {
     float att = 0;
-    for (uint i = 0; i < lights.length(); i++)
+    // for (uint i = 0; i < lights.length(); i++)
     {
-        float d = distance(lights[i].position.xyz, pos);
+        // vec3 dir = normalize(pos - lightPos.xyz);
+        float d = distance(lightPos.xyz, pos);
         if (d <= 0)
-            continue;
-        float v = (lights[i].position.w / (d * d));
-        if (v > 0)
+            return att;
+            // continue;
+        float v = clamp(1.0 - pow(d / lightPos.w, 4), 0, 1) / pow(d, 2);
+        // if (v > 0)
             att += v;
     }
     return att;
@@ -67,7 +71,7 @@ float atten(vec3 pos)
 #include "rayhit.glsl"
 #include "intersect.glsl"
 
-layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 void CS()
 {
 	uvec3 id = gl_GlobalInvocationID;
@@ -86,7 +90,8 @@ void CS()
         if (i == 0 || (hit.uv1.x >= 0 && hit.uv1.y >= 0 && uv1.x < 0 && uv1.y < 0))
             uv1 = hit.uv1;
         vec3 e = ray.energy;
-        vec3 s = Shade(ray, hit);
+        vec3 normal = vec3(0);
+        vec3 s = Shade(ray, hit, normal);
         result += e * s;
         // result += s;
         // Ray r = CreateRay(hit.position + hit.normal * 0.001, hit.normal);

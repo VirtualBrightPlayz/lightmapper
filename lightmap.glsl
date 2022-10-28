@@ -116,9 +116,9 @@ void TraceMesh(MeshObject mesh, vec2 uv1, bool add)
         vec3 wnorm = ray.direction.xyz;
         vec3 normal = vec3(0);
         vec3 result = vec3(0);
-        // /*
+        /*
         ray.origin = ray.origin.xyz + ray.direction * 0.001;
-        ray.direction = -ray.direction;
+        // ray.direction = -ray.direction;
         for (int j = 0; j < 1; j++)
         {
             RayHit hit = Trace(ray);
@@ -129,8 +129,8 @@ void TraceMesh(MeshObject mesh, vec2 uv1, bool add)
             if (ray.energy.x <= 0.0 && ray.energy.y <= 0.0 && ray.energy.z <= 0.0)
                 break;
         }
-        // */
-        /*
+        */
+        // /*
         float alpha = 0;
         float amax = 0;
         for (uint k = 0; k < lights.length(); k++)
@@ -141,30 +141,48 @@ void TraceMesh(MeshObject mesh, vec2 uv1, bool add)
             {
                 continue;
             }
-            ray.origin = lights[k].position.xyz;
-            ray.direction = normalize(wpos + wnorm * 0.001 - ray.origin);
-            ray.energy = vec3(1);
-
-            for (int j = 0; j < 2; j++)
+            // vec3 n = normalize(lights[k].position.xyz - wpos);
+            // vec3 rng = cross(GetTangentFromNormal(n), n);
+            // vec3 rng = GetTangentFromNormal(n);
+            for (float l = 0; l <= lights[k].data.x; l+=lights[k].data.x/4.0) // 4.0
             {
-                vec3 result2 = vec3(0);
-                RayHit hit = Trace(ray);
-                if (hit.dist <= d)
-                    continue;
-                vec3 e = ray.energy;
-                vec3 s = Shade(ray, hit, normal);
-                result += e * s;
-                vec3 val = e * lights[k].color.rgb * atten(lights[k].position, wpos) * lights[k].color.a;
-                // result += val;
-                // alpha += lights[k].data.x * atten(lights[k].position, wpos) * lights[k].color.a;
+                vec3 rng = normalize((vec3(rand(), rand(), rand()) - 0.5) * 2);
+                // vec3 rng = SampleHemisphere(normalize(lights[k].position.xyz - wpos), 0);
+                ray.origin = lights[k].position.xyz + rng * lights[k].data.x;
+                ray.direction = normalize(wpos + wnorm * 0.001 - ray.origin);
+                // ray.origin = wpos + wnorm * 0.001;
+                // ray.direction = normalize(lights[k].position.xyz - wpos + wnorm * 0.001);
+                ray.energy = vec3(1);
 
-                if (ray.energy.x <= 0.0 && ray.energy.y <= 0.0 && ray.energy.z <= 0.0)
-                    break;
+                for (int j = 0; j < 1; j++)
+                {
+                    vec3 result2 = vec3(0);
+                    RayHit hit = Trace(ray);
+                    vec3 e = ray.energy;
+                    if (hit.dist <= d)
+                    {
+                        // vec3 s = Shade(ray, hit, normal);
+                        // result += e * s;
+                        continue;
+                    }
+                    // vec3 s = Shade(ray, hit, normal);
+                    // result += e * s;
+                    vec3 val = e * lights[k].color.rgb * atten(lights[k].position, wpos) * lights[k].color.a;
+                    result += val;
+                    // alpha += lights[k].data.x * atten(lights[k].position, wpos) * lights[k].color.a;
+
+                    if (ray.energy.x <= 0.0 && ray.energy.y <= 0.0 && ray.energy.z <= 0.0)
+                        break;
+                }
             }
         }
-        */
+        // */
+        // ivec2 sizeOut = imageSize(outTex);
+        // imageStore(outTex, ivec2(floor(uv1.x * sizeOut.x) - 1, floor(uv1.y * sizeOut.y) - 1), vec4(result, 1));
+        // continue;
         minmax = 0;
         int j = (uvw.x >= -minmax && uvw.x <= 1+minmax && uvw.y >= -minmax && uvw.y <= 1+minmax && uvw.z >= -minmax && uvw.z <= 1+minmax) ? 0 : 0;
+        // j = 1;
         int km = (j * 2 + 1);
         km *= km;
         for (int y = -j; y <= j; y++)
@@ -172,8 +190,8 @@ void TraceMesh(MeshObject mesh, vec2 uv1, bool add)
         {
             ivec2 sizeOut = imageSize(outTex);
             ivec2 size = imageSize(tex);
-            ivec2 pos = ivec2(round(uv1.x * sizeOut.x), round(uv1.y * sizeOut.y)) + ivec2(x, y);
-            ivec2 pos2 = ivec2(round(uv1.x * sizeOut.x), round(uv1.y * sizeOut.y)) + ivec2(x, y);
+            ivec2 pos = ivec2(floor(uv1.x * sizeOut.x), floor(uv1.y * sizeOut.y)) + ivec2(x, y) - ivec2(1);
+            ivec2 pos2 = ivec2(floor(uv1.x * sizeOut.x), floor(uv1.y * sizeOut.y)) + ivec2(x, y);// - ivec2(1);
             vec4 color = imageLoad(outTex, pos);
             if (color.a <= 0 || j == 0)
             {
@@ -192,12 +210,16 @@ void main()
     // uint i = id.z;
     ivec2 sizeOut = imageSize(outTex);
     vec2 uv1 = (offsetPixels.xy + vec2(id.xy)) / vec2(sizeOut.xy);
+    if (offsetPixels.x + id.x > sizeOut.x || offsetPixels.y + id.y > sizeOut.y)
+        return;
     // if (i >= 0 && i < meshes.length() && meshes[i].indices.z >= 1)
+    // imageStore(outTex, ivec2(floor(uv1.x * sizeOut.x), floor(uv1.y * sizeOut.y)), vec4(offsetPixels.xy / vec2(sizeOut.xy), 0, 1));
+    // return;
     for (uint i = 0; i < meshes.length(); i++)
     {
         if (meshes[i].indices.z < 1)
             continue;
-        // imageStore(outTex, ivec2(round(uv1.x * sizeOut.x), round(uv1.y * sizeOut.y)), vec4(1));
+        // imageStore(outTex, ivec2(floor(uv1.x * sizeOut.x), floor(uv1.y * sizeOut.y)), vec4(1));
         uint j = 0;
         // for (uint j = 0; j < lights.length(); j++)
         {

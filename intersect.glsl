@@ -177,7 +177,7 @@ void IntersectMeshObject(Ray ray, inout RayHit bestHit, MeshObject mesh, vec4 co
 
         if (CheckAABB(ray, 1.0 / ray.direction.xyz, ab))
         {
-            // continue;
+            continue;
         }
 
         float t, u, v;
@@ -191,7 +191,7 @@ void IntersectMeshObject(Ray ray, inout RayHit bestHit, MeshObject mesh, vec4 co
                 bestHit.normal = normalize(u * n1 + v * n2 + w * n0);
                 // bestHit.normal = normalize(cross(v1 - v0, v2 - v0));
                 bestHit.albedo = vec3(0.8);
-                bestHit.specular = vec3(0.4);
+                bestHit.specular = vec3(0.6);
                 bestHit.uv1 = u * u1 + v * u2 + w * u0;
                 // bestHit.specular = vec3(1, 0.4, 0.2);
                 if (color.w != 0)
@@ -212,23 +212,6 @@ RayHit Trace(Ray ray, vec3 color, bool canShade)
 {
     RayHit bestHit = CreateRayHit();
     // IntersectGroundPlane(ray, bestHit);
-    /*
-    vec3 v0 = vec3(-15, 0, -15);
-    vec3 v1 = vec3(15, 0, -15);
-    vec3 v2 = vec3(0, 15, -15);
-    float t, u, v;
-    if (IntersectTriangle_MT97(ray, v0, v1, v2, t, u, v))
-    {
-        if (t > 0 && t < bestHit.dist)
-        {
-            bestHit.dist = t;
-            bestHit.position = ray.origin + t * ray.direction;
-            bestHit.normal = normalize(cross(v1 - v0, v2 - v0));
-            bestHit.albedo = vec3(1);
-            bestHit.specular = vec3(1, 0.4, 0.2);
-        }
-    }
-    */
     for (uint i = 0; i < meshes.length(); i++)
     {
         IntersectMeshObject(ray, bestHit, meshes[i], vec4(color, 0));
@@ -269,12 +252,14 @@ vec3 Shade(inout Ray ray, RayHit hit, inout vec3 normal)
         vec3 att = vec3(0);
         for (uint i = 0; i < lights.length(); i++)
         {
+            break;
             if (distance(lights[i].position.xyz, hit.position) > lights[i].position.w)
             {
                 continue;
             }
-            vec3 dirLight2 = normalize(lights[i].position.xyz - hit.position);
-            vec3 lightOffset = (lights[i].position.xyz + dirLight2 * -0.25);
+            vec3 dirLight2 = normalize(lights[i].position.xyz - (hit.position + hit.normal * 0.001));
+            vec3 lightOffset = vec3(0);
+            //(lights[i].position.xyz + dirLight2 * -0.25);
             Ray shadowRay = CreateRay(hit.position + hit.normal * 0.001, dirLight2.xyz);
             RayHit shadowHit = Trace(shadowRay);
             uint k = 0;
@@ -282,26 +267,30 @@ vec3 Shade(inout Ray ray, RayHit hit, inout vec3 normal)
             vec3 att2 = vec3(0);
             for (float j = 0; j <= lights[i].data.x; j+=lights[i].data.x/4.0) // 4.0
             {
-                vec3 rng = normalize((vec3(rand(), rand(), rand()) - 0.5) * 2);
-                // vec3 rng = dirLight2;
+                break;
+                // vec3 rng = normalize((vec3(rand(), rand(), rand()) - 0.5) * 2);
+                vec3 rng = dirLight2;
                 // vec3 rng = SampleHemisphere(dirLight2, 0);
-                lightOffset = (lights[i].position.xyz - rng);
+                lightOffset = (lights[i].position.xyz - rng * j);
+                lightOffset = lights[i].position.xyz;
                 vec3 dirLight5 = normalize(lightOffset - hit.position);
                 Ray shadowRay2 = CreateRay(hit.position + hit.normal * 0.001, dirLight5.xyz);
                 RayHit shadowHit2 = Trace(shadowRay2);
                 if (shadowHit2.dist < infinity)
                 {
                     vec3 v = lights[i].color.rgb * atten(vec4(lightOffset, lights[i].position.w), hit.position) * lights[i].color.a;
-                    vec3 dirLight3 = normalize(lightOffset - shadowHit2.position);
+                    vec3 dirLight3 = normalize(lightOffset - (shadowHit2.position + shadowHit2.normal * 0.001));
                     v *= clamp(dot(-dirLight5.xyz, dirLight3.xyz), 0, 1);
                     att2 += v;
+                    // att2 /= 2;
                     // normal += dirLight5 * clamp(dot(-dirLight5.xyz, dirLight3.xyz), 0, 1);
                     // normal /= 2;
                     // normal = normalize(normal);
                 }
                 k++;
             }
-            att2 /= k;
+            if (k > 0)
+                att2 /= k;
             att += att2;
             // */
             if (shadowHit.dist < infinity)
@@ -309,7 +298,7 @@ vec3 Shade(inout Ray ray, RayHit hit, inout vec3 normal)
                 vec3 v = lights[i].color.rgb * atten(lights[i].position.xyzw, hit.position) * lights[i].color.a;
                 vec3 dirLight3 = normalize(lights[i].position.xyz - shadowHit.position);
                 v *= clamp(dot(-dirLight2.xyz, dirLight3.xyz), 0, 1);
-                // att += v;
+                att += v;
                 // normal += dirLight2 * clamp(dot(-dirLight2.xyz, dirLight3.xyz), 0, 1);
                 // normal /= 2;
                 // normal = normalize(normal);
@@ -320,8 +309,11 @@ vec3 Shade(inout Ray ray, RayHit hit, inout vec3 normal)
         float specChance = energy(hit.specular);
         float diffChance = energy(albedo);
         float sum = specChance + diffChance;
-        specChance /= sum;
-        diffChance /= sum;
+        if (sum > 0)
+        {
+            specChance /= sum;
+            diffChance /= sum;
+        }
 
         float roulette = rand();
         if (roulette < specChance)
@@ -377,6 +369,6 @@ vec3 Shade(inout Ray ray, RayHit hit, inout vec3 normal)
         float phi = atan(ray.direction.x, -ray.direction.z) * 2 / -PI * 0.5;
         // return vec3(1);
         // return ray.direction * 0.5 + 0.5;
-        return vec3(0);
+        return vec3(1);
     }
 }

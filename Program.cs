@@ -142,6 +142,7 @@ public class Program
             lights = new PointLightObject[0],
         };
         {
+            List<Sphere> spheres = new List<Sphere>();
             List<MeshObject> objects = new List<MeshObject>();
             List<MeshVertex> vertices = new List<MeshVertex>();
             List<Vector4> indexes = new List<Vector4>();
@@ -189,12 +190,19 @@ public class Program
                     color = new Vector4(node.PunctualLight.Color, node.PunctualLight.Intensity),
                     data = new Vector4(data.size),
                 });
+                spheres.Add(new Sphere()
+                {
+                    position = new Vector4(node.WorldMatrix.Translation, 1),
+                    radius = new Vector4(data.size),
+                    emission = new Vector4(node.PunctualLight.Color, 1),
+                });
             }
 
             world.meshes = objects.ToArray();
             world.meshVertices = vertices.ToArray();
             world.meshIndices = indexes.ToArray();
             world.lights = lights.ToArray();
+            // world.spheres = spheres.ToArray();
         }
 
         WindowCreateInfo windowCI = new WindowCreateInfo()
@@ -226,10 +234,13 @@ public class Program
             var result2 = SpirvCompilation.CompileVertexFragment(Encoding.UTF8.GetBytes(File.ReadAllText(Path.Combine(localPath, "add.vert"))), Encoding.UTF8.GetBytes(File.ReadAllText(Path.Combine(localPath, "add.frag"))), CrossCompileTarget.GLSL, new CrossCompileOptions(gd.BackendType == GraphicsBackend.OpenGL, gd.BackendType == GraphicsBackend.Vulkan));
 
             Matrix4x4.Invert(Matrix4x4.CreatePerspectiveFieldOfView(90f * MathF.PI / 180f, 1f, 0.1f, 1000f), out var invProj);
-            // Matrix4x4.Invert(cam.Camera.Matrix, out var invProj);
             Matrix4x4.Invert(Matrix4x4.CreateLookAt(new Vector3(0, 2, 5), new Vector3(0, 0, 0), Vector3.UnitY), out var camView);
-            // Matrix4x4.Invert(cam.WorldMatrix, out var camView);
-            // camView = cam.WorldMatrix;
+            // if (cam != null)
+            {
+                // Matrix4x4.Invert(cam.Camera.Matrix, out invProj);
+                // Matrix4x4.Invert(cam.WorldMatrix, out camView);
+                // camView = cam.WorldMatrix;
+            }
             camView = Matrix4x4.CreateScale(1f, -1f, 1f) * camView;
             var paramz = new Params()
             {
@@ -336,8 +347,6 @@ public class Program
             // while (window.Exists)
             for (int k = 0; k < samples; k++)
             {
-                Console.WriteLine($"Sample {k}/{samples} Done");
-                Console.Out.Flush();
                 // Thread.Sleep(100);
                 try
                 {
@@ -360,9 +369,10 @@ public class Program
                 gd.SubmitCommands(commandList);
                 gd.WaitForIdle();
 
-                for (int i = 0; i < textureOut.Width+(int)baseTexSize*8; i+=(int)baseTexSize*8)
+                int l = 0;
+                for (int i = 0; i <= textureOut.Width+(int)baseTexSize; i+=(int)baseTexSize)
                 {
-                    for (int i2 = 0; i2 < textureOut.Height+(int)baseTexSize*8; i2+=(int)baseTexSize*8)
+                    for (int i2 = 0; i2 <= textureOut.Height+(int)baseTexSize; i2+=(int)baseTexSize)
                     {
                         commandList.Begin();
                         commandList.SetPipeline(pipeline);
@@ -376,8 +386,10 @@ public class Program
                         commandList.End();
                         gd.SubmitCommands(commandList);
                         gd.WaitForIdle();
-                        Thread.Sleep(50);
-                        Console.WriteLine($"Render ({baseTexSize / 8})({i},{i2}) Done");
+                        Thread.Sleep(25);
+                        Console.WriteLine($"Render ({l})({i},{i2}) Done");
+                        Console.Out.Flush();
+                        l++;
                     }
                 }
 
@@ -405,6 +417,9 @@ public class Program
                 commandList.End();
                 gd.SubmitCommands(commandList);
                 gd.WaitForIdle();
+                Thread.Sleep(25);
+                Console.WriteLine($"Sample {k+1}/{samples} Done");
+                Console.Out.Flush();
                 // Thread.Sleep(100);
                 // window.PumpEvents();
             }
@@ -450,7 +465,7 @@ public class Program
                 img.SaveAsPng(fs);
             }
 
-            /*
+            // /*
             {
                 using var mapTexture = gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(texture.Width, texture.Height, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Staging));
                 commandList.Begin();
@@ -513,7 +528,7 @@ public class Program
                 using FileStream fs = File.OpenWrite("gfxTex.png");
                 img.SaveAsPng(fs);
             }
-            */
+            // */
 
             for (int i = 0; i < layouts.Count; i++)
             {
