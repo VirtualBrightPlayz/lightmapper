@@ -378,7 +378,7 @@ public class Program
                         commandList.SetPipeline(pipeline);
                         for (int j = 0; j < sets.Count; j++)
                             commandList.SetComputeResourceSet((uint)j, sets[j]);
-                        commandList.Dispatch(baseTexSize / 8, baseTexSize / 8, (uint)world.meshes.Length);
+                        commandList.Dispatch(baseTexSize / 8, baseTexSize / 8, (uint)1);
                         var paramz2 = paramz;
                         paramz2.offsetPixels = new Vector4(i, i2, 0, 0);
                         // commandList.UpdateBuffer(buffer1, (uint)(Unsafe.SizeOf<Matrix4x4>() * 2 + Unsafe.SizeOf<Vector4>() * 1), paramz2.offsetPixels);

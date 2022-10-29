@@ -60,7 +60,7 @@ vec3 filter_3x3()
         }
     }
 
-    return valsSort[4];
+    return valsSort[4] / 3.0;
 }
 
 vec3 filter_5x5()
@@ -118,13 +118,13 @@ vec3 filter_5x5()
         }
     }
 
-    return valsSort[12];
+    return valsSort[12] / 5.0;
 }
 
 void main()
 {
     fsout_Color = vec4(texture(sampler2D(tex, texSampler), fsin_UV).rgb, 1.0 / (total.x + 1.0));
-    // fsout_Color.rgb = filter_5x5();
+    fsout_Color.rgb = filter_5x5();
     // fsout_Color.rgb = filter_3x3();
     return;
     vec3 val = vec3(0);

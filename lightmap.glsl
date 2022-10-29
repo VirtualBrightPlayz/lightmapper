@@ -44,7 +44,7 @@ layout(set = 0, binding = 7, rgba32f) uniform image2D outTex;
 float seed = 0;
 float rand()
 {
-    float result = fract(sin(seed / 100.0 * dot(gl_GlobalInvocationID.xy, vec2(12.9898, 78.233))) * 43758.5453);
+    float result = fract(sin(seed / 100.0 * dot(offsetPixels.xy + gl_GlobalInvocationID.xy, vec2(12.9898, 78.233))) * 43758.5453);
     seed += 1;
     return result;
 }
@@ -150,7 +150,8 @@ void TraceMesh(MeshObject mesh, vec2 uv1, bool add)
             // vec3 n = normalize(lights[k].position.xyz - wpos);
             // vec3 rng = cross(GetTangentFromNormal(n), n);
             // vec3 rng = GetTangentFromNormal(n);
-            for (float l = 0; l < 8; l++) // 4.0
+            vec3 result2 = vec3(0);
+            for (float l = 0; l < 4; l++) // 4.0
             {
                 vec3 rng = normalize((vec3(rand(), rand(), rand()) - 0.5) * 2);
                 // vec3 rng = SampleHemisphere(normalize(lights[k].position.xyz - wpos), 16);
@@ -160,9 +161,9 @@ void TraceMesh(MeshObject mesh, vec2 uv1, bool add)
                 // ray.origin = wpos + wnorm * 0.001;
                 // ray.direction = normalize(lights[k].position.xyz - wpos + wnorm * 0.001);
                 ray.energy = vec3(1);
+                ray.predicted_distance = d;//lights[k].position.w;
                 for (int j = 0; j < 1; j++)
                 {
-                    vec3 result2 = vec3(0);
                     RayHit hit = Trace(ray);
                     vec3 e = ray.energy;
                     if (hit.dist <= d2)
@@ -174,13 +175,14 @@ void TraceMesh(MeshObject mesh, vec2 uv1, bool add)
                     // vec3 s = Shade(ray, hit, normal);
                     // result += e * s;
                     vec3 val = e * lights[k].color.rgb * atten(lights[k].position, wpos) * lights[k].color.a;
-                    result += val;
+                    result2 += val;
                     // alpha += lights[k].data.x * atten(lights[k].position, wpos) * lights[k].color.a;
 
                     if (ray.energy.x <= 0.0 && ray.energy.y <= 0.0 && ray.energy.z <= 0.0)
                         break;
                 }
             }
+            result += result2 / 4.0;
         }
         // */
         // ivec2 sizeOut = imageSize(outTex);
@@ -220,6 +222,8 @@ void main()
 	uvec3 id = gl_GlobalInvocationID;
     seed = inSeed.x;
     // uint i = id.z;
+    // if (id.z > 0)
+        // return;
     ivec2 sizeOut = imageSize(outTex);
     vec2 uv1 = (offsetPixels.xy + vec2(id.xy)) / vec2(sizeOut.xy);
     if (offsetPixels.x + id.x > sizeOut.x || offsetPixels.y + id.y > sizeOut.y)

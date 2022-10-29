@@ -145,6 +145,16 @@ void IntersectMeshObject(Ray ray, inout RayHit bestHit, MeshObject mesh, vec4 co
         vec2 u1 = meshVertices[uint(meshIndices[i+1].x)].uv01.zw;
         vec2 u2 = meshVertices[uint(meshIndices[i+2].x)].uv01.zw;
 
+        if (ray.predicted_distance > 0 && ray.predicted_distance < distance(ray.origin, v0) && ray.predicted_distance < distance(ray.origin, v1) && ray.predicted_distance < distance(ray.origin, v2))
+        {
+            continue;
+        }
+        float dotmin = 0;
+        if (dot(ray.direction, n0) > dotmin && dot(ray.direction, n1) > dotmin && dot(ray.direction, n2) > dotmin)
+        {
+            continue;
+        }
+
         AABB ab;
         // float part = 1.0 / 3.0;
         // vec3 norm = normalize(part * n1 + part * n2 + part * n0);
@@ -175,7 +185,7 @@ void IntersectMeshObject(Ray ray, inout RayHit bestHit, MeshObject mesh, vec4 co
         ab.max_pos.xyz = vec3(x_max, y_max, z_max);
 
 
-        if (CheckAABB(ray, 1.0 / ray.direction.xyz, ab))
+        // if (CheckAABB(ray, 1.0 / ray.direction.xyz, ab) && !(x_max > ray.origin.x && x_min < ray.origin.x && y_max > ray.origin.y && y_min < ray.origin.y && z_max > ray.origin.z && z_min < ray.origin.z))
         {
             // continue;
         }
