@@ -124,6 +124,8 @@ vec3 filter_5x5()
 void main()
 {
     fsout_Color = vec4(texture(sampler2D(tex, texSampler), fsin_UV).rgb, 1.0 / (total.x + 1.0));
+    // fsout_Color.rgb = filter_5x5();
+    // fsout_Color.rgb = filter_3x3();
     return;
     vec3 val = vec3(0);
     float j = texture(sampler2D(tex, texSampler), fsin_UV).a;// * 255;

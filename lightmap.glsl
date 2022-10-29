@@ -106,8 +106,14 @@ void TraceMesh(MeshObject mesh, vec2 uv1, bool add)
         MeshVertex v1 = meshVertices[uint(meshIndices[i+1].x)];
         MeshVertex v2 = meshVertices[uint(meshIndices[i+2].x)];
         vec3 uvw = GetBarycentric(v0.uv01.zw, v1.uv01.zw, v2.uv01.zw, uv1);
-        float minmax = 0.0025;
+        vec2 uvmax = max(max(v0.uv01.zw, v1.uv01.zw), v2.uv01.zw);
+        vec2 uvmin = min(min(v0.uv01.zw, v1.uv01.zw), v2.uv01.zw);
+        float minmax = 0.25;
         if (!(uvw.x >= -minmax && uvw.x <= 1+minmax && uvw.y >= -minmax && uvw.y <= 1+minmax && uvw.z >= -minmax && uvw.z <= 1+minmax))
+        {
+            continue;
+        }
+        if (uv1.x < uvmin.x || uv1.x > uvmax.x || uv1.y < uvmin.y || uv1.y > uvmax.y)
         {
             continue;
         }
@@ -137,29 +143,29 @@ void TraceMesh(MeshObject mesh, vec2 uv1, bool add)
         {
             amax += lights[k].data.x;
             float d = distance(lights[k].position.xyz, wpos + wnorm * 0.001);
-            if (d > lights[k].position.w)
+            if (d > lights[k].position.w * 2)
             {
                 continue;
             }
             // vec3 n = normalize(lights[k].position.xyz - wpos);
             // vec3 rng = cross(GetTangentFromNormal(n), n);
             // vec3 rng = GetTangentFromNormal(n);
-            for (float l = 0; l <= lights[k].data.x; l+=lights[k].data.x/4.0) // 4.0
+            for (float l = 0; l < 8; l++) // 4.0
             {
                 vec3 rng = normalize((vec3(rand(), rand(), rand()) - 0.5) * 2);
-                // vec3 rng = SampleHemisphere(normalize(lights[k].position.xyz - wpos), 0);
-                ray.origin = lights[k].position.xyz + rng * lights[k].data.x;
+                // vec3 rng = SampleHemisphere(normalize(lights[k].position.xyz - wpos), 16);
+                ray.origin = lights[k].position.xyz + rng * (lights[k].data.x);
+                float d2 = distance(ray.origin, wpos + wnorm * 0.001);
                 ray.direction = normalize(wpos + wnorm * 0.001 - ray.origin);
                 // ray.origin = wpos + wnorm * 0.001;
                 // ray.direction = normalize(lights[k].position.xyz - wpos + wnorm * 0.001);
                 ray.energy = vec3(1);
-
                 for (int j = 0; j < 1; j++)
                 {
                     vec3 result2 = vec3(0);
                     RayHit hit = Trace(ray);
                     vec3 e = ray.energy;
-                    if (hit.dist <= d)
+                    if (hit.dist <= d2)
                     {
                         // vec3 s = Shade(ray, hit, normal);
                         // result += e * s;
@@ -190,12 +196,18 @@ void TraceMesh(MeshObject mesh, vec2 uv1, bool add)
         {
             ivec2 sizeOut = imageSize(outTex);
             ivec2 size = imageSize(tex);
-            ivec2 pos = ivec2(floor(uv1.x * sizeOut.x), floor(uv1.y * sizeOut.y)) + ivec2(x, y) - ivec2(1);
-            ivec2 pos2 = ivec2(floor(uv1.x * sizeOut.x), floor(uv1.y * sizeOut.y)) + ivec2(x, y);// - ivec2(1);
-            vec4 color = imageLoad(outTex, pos);
+            ivec2 pos1 = ivec2(floor(uv1.x * sizeOut.x), floor(uv1.y * sizeOut.y)) + ivec2(x, y) - ivec2(1);
+            ivec2 pos2 = ivec2(floor(uv1.x * sizeOut.x), ceil(uv1.y * sizeOut.y)) + ivec2(x, y) - ivec2(1);
+            ivec2 pos3 = ivec2(ceil(uv1.x * sizeOut.x), floor(uv1.y * sizeOut.y)) + ivec2(x, y) - ivec2(1);
+            ivec2 pos4 = ivec2(ceil(uv1.x * sizeOut.x), ceil(uv1.y * sizeOut.y)) + ivec2(x, y) - ivec2(1);
+            // ivec2 pos2 = ivec2(floor(uv1.x * sizeOut.x), floor(uv1.y * sizeOut.y)) + ivec2(x, y);// - ivec2(1);
+            vec4 color = imageLoad(outTex, pos1);
             if (color.a <= 0 || j == 0)
             {
-                imageStore(outTex, pos, vec4(result /*+ color.rgb*/, 1));
+                imageStore(outTex, pos1, vec4(result /*+ color.rgb*/, 1));
+                imageStore(outTex, pos2, vec4(result /*+ color.rgb*/, 1));
+                imageStore(outTex, pos3, vec4(result /*+ color.rgb*/, 1));
+                imageStore(outTex, pos4, vec4(result /*+ color.rgb*/, 1));
                 // imageStore(tex, pos2, vec4(normal * 0.5 + 0.5, 1));
             }
         }

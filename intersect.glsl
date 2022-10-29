@@ -177,7 +177,7 @@ void IntersectMeshObject(Ray ray, inout RayHit bestHit, MeshObject mesh, vec4 co
 
         if (CheckAABB(ray, 1.0 / ray.direction.xyz, ab))
         {
-            continue;
+            // continue;
         }
 
         float t, u, v;

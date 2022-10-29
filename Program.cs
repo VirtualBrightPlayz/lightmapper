@@ -370,9 +370,9 @@ public class Program
                 gd.WaitForIdle();
 
                 int l = 0;
-                for (int i = 0; i <= textureOut.Width+(int)baseTexSize; i+=(int)baseTexSize)
+                for (int i = 0; i <= textureOut.Width; i+=(int)baseTexSize)
                 {
-                    for (int i2 = 0; i2 <= textureOut.Height+(int)baseTexSize; i2+=(int)baseTexSize)
+                    for (int i2 = 0; i2 <= textureOut.Height; i2+=(int)baseTexSize)
                     {
                         commandList.Begin();
                         commandList.SetPipeline(pipeline);
@@ -386,9 +386,9 @@ public class Program
                         commandList.End();
                         gd.SubmitCommands(commandList);
                         gd.WaitForIdle();
-                        Thread.Sleep(25);
-                        Console.WriteLine($"Render ({l})({i},{i2}) Done");
-                        Console.Out.Flush();
+                        // Thread.Sleep(25);
+                        // Console.WriteLine($"Render ({l})({i},{i2}) Done");
+                        // Console.Out.Flush();
                         l++;
                     }
                 }
