@@ -5,6 +5,7 @@ struct MeshObject
     mat4 model;
     mat4 invModel;
     vec4 indices;
+    AABB aabb;
 };
 
 struct PointLightObject

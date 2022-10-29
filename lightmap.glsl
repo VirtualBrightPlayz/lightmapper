@@ -7,8 +7,8 @@
 
 #include "inputs.glsl"
 #include "sphere.glsl"
-#include "meshobject.glsl"
 #include "aabb.glsl"
+#include "meshobject.glsl"
 #line 13 "lightmap.glsl"
 
 layout(set = 0, binding = 0, rgba32f) uniform image2D tex;
@@ -62,6 +62,7 @@ float atten(vec4 lightPos, vec3 pos)
             return att;
             // continue;
         float v = clamp(1.0 - pow(d / lightPos.w, 4), 0, 1) / pow(d, 2);
+        v = clamp(1.0 - pow(d / lightPos.w, 2), 0, 1);
         // if (v > 0)
             att += v;
     }
@@ -226,8 +227,8 @@ void main()
         // return;
     ivec2 sizeOut = imageSize(outTex);
     vec2 uv1 = (offsetPixels.xy + vec2(id.xy)) / vec2(sizeOut.xy);
-    if (offsetPixels.x + id.x > sizeOut.x || offsetPixels.y + id.y > sizeOut.y)
-        return;
+    // if (offsetPixels.x + id.x > sizeOut.x || offsetPixels.y + id.y > sizeOut.y)
+        // return;
     // if (i >= 0 && i < meshes.length() && meshes[i].indices.z >= 1)
     // imageStore(outTex, ivec2(floor(uv1.x * sizeOut.x), floor(uv1.y * sizeOut.y)), vec4(offsetPixels.xy / vec2(sizeOut.xy), 0, 1));
     // return;

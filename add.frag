@@ -121,10 +121,27 @@ vec3 filter_5x5()
     return valsSort[12] / 5.0;
 }
 
+vec3 remap(vec3 value, vec3 low1, vec3 high1, vec3 low2, vec3 high2)
+{
+    return low2 + (value - low1) * (high2 - low2) / (high1 - low1);
+}
+
 void main()
 {
     fsout_Color = vec4(texture(sampler2D(tex, texSampler), fsin_UV).rgb, 1.0 / (total.x + 1.0));
     fsout_Color.rgb = filter_5x5();
+    // if (fsout_Color.r > 1 || fsout_Color.g > 1 || fsout_Color.b > 1)
+    {
+        // fsout_Color.rgb = remap(vec3(1), vec3(0), fsout_Color.rgb, vec3(0), vec3(1));
+    }
+    // fsout_Color.rgb = 1 / (fsout_Color.rgb + 1);
+    vec3 y3 = fsout_Color.rgb * vec3(0.2126, 0.7152, 0.0722);
+    float y = y3.r + y3.g + y3.b;
+    fsout_Color.rgb *= 1 / (y + 1);
+    // fsout_Color.rgb = smoothstep(fsout_Color.rgb, vec3(0), vec3(fsout_Color.r + fsout_Color.g + fsout_Color.b) / 3.0);
+    // fsout_Color.r = smoothstep(fsout_Color.r, fsout_Color.r * 0.1, 0.5);
+    // fsout_Color.g = smoothstep(fsout_Color.g, fsout_Color.g * 0.1, 0.5);
+    // fsout_Color.b = smoothstep(fsout_Color.b, fsout_Color.b * 0.1, 0.5);
     // fsout_Color.rgb = filter_3x3();
     return;
     vec3 val = vec3(0);

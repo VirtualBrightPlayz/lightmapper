@@ -129,6 +129,10 @@ bool IntersectTriangle_MT97(Ray ray, vec3 vert0, vec3 vert1, vec3 vert2, inout f
 
 void IntersectMeshObject(Ray ray, inout RayHit bestHit, MeshObject mesh, vec4 color)
 {
+    if (!CheckAABB(ray, 1.0 / ray.direction.xyz, mesh.aabb))
+    // if ((CheckAABB(ray, 1.0 / ray.direction.xyz, mesh.aabb) && !(mesh.aabb.max_pos.x > ray.origin.x && mesh.aabb.min_pos.x < ray.origin.x && mesh.aabb.max_pos.y > ray.origin.y && mesh.aabb.min_pos.y < ray.origin.y && mesh.aabb.max_pos.z > ray.origin.z && mesh.aabb.min_pos.z < ray.origin.z)))
+        return;
+
     uint offset = uint(mesh.indices.x);
     uint count = offset + uint(mesh.indices.y);
     for (uint i = offset; i < count; i += 3)
@@ -137,14 +141,21 @@ void IntersectMeshObject(Ray ray, inout RayHit bestHit, MeshObject mesh, vec4 co
         vec3 v1 = (mesh.model * vec4(meshVertices[uint(meshIndices[i+1].x)].position.xyz, 1)).xyz;
         vec3 v2 = (mesh.model * vec4(meshVertices[uint(meshIndices[i+2].x)].position.xyz, 1)).xyz;
 
+        /*
         vec3 n0 = (vec4(meshVertices[uint(meshIndices[i].x)].normal.xyz, 0) * transpose(mesh.invModel)).xyz;
         vec3 n1 = (vec4(meshVertices[uint(meshIndices[i+1].x)].normal.xyz, 0) * transpose(mesh.invModel)).xyz;
         vec3 n2 = (vec4(meshVertices[uint(meshIndices[i+2].x)].normal.xyz, 0) * transpose(mesh.invModel)).xyz;
+        */
+
+        vec3 n0 = (vec4(meshVertices[uint(meshIndices[i].x)].normal.xyz, 0) * (mesh.invModel)).xyz;
+        vec3 n1 = (vec4(meshVertices[uint(meshIndices[i+1].x)].normal.xyz, 0) * (mesh.invModel)).xyz;
+        vec3 n2 = (vec4(meshVertices[uint(meshIndices[i+2].x)].normal.xyz, 0) * (mesh.invModel)).xyz;
 
         vec2 u0 = meshVertices[uint(meshIndices[i].x)].uv01.zw;
         vec2 u1 = meshVertices[uint(meshIndices[i+1].x)].uv01.zw;
         vec2 u2 = meshVertices[uint(meshIndices[i+2].x)].uv01.zw;
 
+        /*
         if (ray.predicted_distance > 0 && ray.predicted_distance < distance(ray.origin, v0) && ray.predicted_distance < distance(ray.origin, v1) && ray.predicted_distance < distance(ray.origin, v2))
         {
             continue;
@@ -154,7 +165,9 @@ void IntersectMeshObject(Ray ray, inout RayHit bestHit, MeshObject mesh, vec4 co
         {
             continue;
         }
+        */
 
+        /*
         AABB ab;
         // float part = 1.0 / 3.0;
         // vec3 norm = normalize(part * n1 + part * n2 + part * n0);
@@ -179,11 +192,11 @@ void IntersectMeshObject(Ray ray, inout RayHit bestHit, MeshObject mesh, vec4 co
         {
             ab.max_pos = v0;
         }
-        */
+        *
 
         ab.min_pos.xyz = vec3(x_min, y_min, z_min);
         ab.max_pos.xyz = vec3(x_max, y_max, z_max);
-
+        */
 
         // if (CheckAABB(ray, 1.0 / ray.direction.xyz, ab) && !(x_max > ray.origin.x && x_min < ray.origin.x && y_max > ray.origin.y && y_min < ray.origin.y && z_max > ray.origin.z && z_min < ray.origin.z))
         {

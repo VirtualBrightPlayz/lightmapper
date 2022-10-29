@@ -56,6 +56,7 @@ public class Program
         public Matrix4x4 model;
         public Matrix4x4 invModel;
         public Vector4 indices;
+        public AABB aabb;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -79,6 +80,13 @@ public class Program
     {
         public Vector2 position;
         public Vector2 uv;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct AABB
+    {
+        public Vector4 min_pos;
+        public Vector4 max_pos;
     }
 
     public record ExternalLightData(float size);
@@ -155,9 +163,36 @@ public class Program
                 var uv0s = node.Mesh.Primitives.SelectMany(x => x.GetVertexAccessor("TEXCOORD_0").AsVector2Array()).ToArray();
                 var uv1s = node.Mesh.Primitives.SelectMany(x => x.GetVertexAccessor("TEXCOORD_1").AsVector2Array()).ToArray();
                 var inds = node.Mesh.Primitives.SelectMany(x => x.GetTriangleIndices().SelectMany(x => new[] { x.A, x.B, x.C })).Select(x => new Vector4(x + vertices.Count)).ToArray();
+                Vector3 min = (node.WorldMatrix * Matrix4x4.CreateTranslation(positions.First())).Translation;//positions.First();
+                Vector3 max = (node.WorldMatrix * Matrix4x4.CreateTranslation(positions.First())).Translation;//positions.First();
 
                 for (int i = 0; i < positions.Length; i++)
                 {
+                    var wpos = (node.WorldMatrix * Matrix4x4.CreateTranslation(positions[i])).Translation;
+                    if (wpos.X < min.X)
+                    {
+                        min.X = wpos.X;
+                    }
+                    if (wpos.Y < min.Y)
+                    {
+                        min.Y = wpos.Y;
+                    }
+                    if (wpos.Z < min.Z)
+                    {
+                        min.Z = wpos.Z;
+                    }
+                    if (wpos.X > max.X)
+                    {
+                        max.X = wpos.X;
+                    }
+                    if (wpos.Y > max.Y)
+                    {
+                        max.Y = wpos.Y;
+                    }
+                    if (wpos.Z > max.Z)
+                    {
+                        max.Z = wpos.Z;
+                    }
                     vertices.Add(new MeshVertex()
                     {
                         position = new Vector4(positions[i], 1f),
@@ -166,11 +201,17 @@ public class Program
                     });
                 }
                 Matrix4x4.Invert(node.WorldMatrix, out var invModel);
+                AABB aabb = new AABB()
+                {
+                    min_pos = new Vector4(min - Vector3.One * 0.1f, 1),
+                    max_pos = new Vector4(max + Vector3.One * 0.1f, 1),
+                };
                 objects.Add(new MeshObject()
                 {
                     model = node.WorldMatrix,
-                    invModel = invModel,
-                    indices = new Vector4(indexes.Count, inds.Length, !string.IsNullOrEmpty(renderOnly) && node.Mesh.Name != renderOnly ? 0 : 1, 0),
+                    invModel = Matrix4x4.Transpose(invModel),
+                    indices = new Vector4(indexes.Count, inds.Length, !string.IsNullOrEmpty(renderOnly) && !node.Mesh.Name.ToLower().StartsWith(renderOnly.ToLower()) ? 0 : 1, 0),
+                    aabb = aabb,
                 });
                 indexes.AddRange(inds);
             }
@@ -251,8 +292,8 @@ public class Program
 
             // compute setup
             using var shader = gd.ResourceFactory.CreateFromSpirv(new ShaderDescription(ShaderStages.Compute, Encoding.UTF8.GetBytes(result.ComputeShader), "main"));
-            using var texture = gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(texSize, texSize, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Storage | TextureUsage.Sampled));
-            using var textureOut = gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(texSize, texSize, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Storage | TextureUsage.Sampled));
+            using var texture = gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(texSize, texSize, 1, 1, PixelFormat.R32_G32_B32_A32_Float, TextureUsage.Storage | TextureUsage.Sampled));
+            using var textureOut = gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(texSize, texSize, 1, 1, PixelFormat.R32_G32_B32_A32_Float, TextureUsage.Storage | TextureUsage.Sampled));
             using var buffer1 = gd.ResourceFactory.CreateBuffer(new BufferDescription((uint)Unsafe.SizeOf<Params>(), BufferUsage.UniformBuffer));
             gd.UpdateBuffer(buffer1, 0, paramz);
             using var buffer2 = gd.ResourceFactory.CreateBuffer(new BufferDescription((uint)(world.spheres.Length * Unsafe.SizeOf<Sphere>()), BufferUsage.StructuredBufferReadOnly, (uint)Unsafe.SizeOf<Sphere>()));
@@ -319,7 +360,7 @@ public class Program
             });
             using var addBuffer1 = gd.ResourceFactory.CreateBuffer(new BufferDescription((uint)Unsafe.SizeOf<Vector4>(), BufferUsage.UniformBuffer));
             gd.UpdateBuffer(addBuffer1, 0, new Vector4(0, 0, textureOut.Width, textureOut.Height));
-            using var gfxTexture = gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(textureOut.Width, textureOut.Height, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.RenderTarget));
+            using var gfxTexture = gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(textureOut.Width, textureOut.Height, 1, 1, PixelFormat.R32_G32_B32_A32_Float, TextureUsage.RenderTarget));
             using var gfxFramebuffer = gd.ResourceFactory.CreateFramebuffer(new FramebufferDescription(null, gfxTexture));
             using var gfxSampler = gd.ResourceFactory.CreateSampler(SamplerDescription.Point);
 
@@ -353,7 +394,7 @@ public class Program
                     if (Console.KeyAvailable)
                     {
                         Console.ReadKey();
-                        break;
+                        // break;
                     }
                 }
                 catch
@@ -445,18 +486,18 @@ public class Program
             */
 
             {
-                using var mapTexture = gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(gfxTexture.Width, gfxTexture.Height, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Staging));
+                using var mapTexture = gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(gfxTexture.Width, gfxTexture.Height, 1, 1, PixelFormat.R32_G32_B32_A32_Float, TextureUsage.Staging));
                 commandList.Begin();
                 commandList.CopyTexture(gfxTexture, mapTexture);
                 commandList.End();
                 gd.SubmitCommands(commandList);
                 gd.WaitForIdle();
 
-                var view = gd.Map<Rgba32>(mapTexture, MapMode.Read);
-                Rgba32[] data = new Rgba32[view.Count];
+                var view = gd.Map<RgbaFloat>(mapTexture, MapMode.Read);
+                Rgba32[] data = new Rgba32[mapTexture.Width * mapTexture.Height];
                 for (int i = 0; i < view.Count; i++)
                 {
-                    data[i] = view[i];
+                    data[i] = new Rgba32(view[i].R, view[i].G, view[i].B, view[i].A);
                     data[i].A = 255;
                 }
                 gd.Unmap(mapTexture);
@@ -465,9 +506,9 @@ public class Program
                 img.SaveAsPng(fs);
             }
 
-            // /*
+            /*
             {
-                using var mapTexture = gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(texture.Width, texture.Height, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Staging));
+                using var mapTexture = gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(texture.Width, texture.Height, 1, 1, PixelFormat.R8_G8_B8_A8_UInt, TextureUsage.Staging));
                 commandList.Begin();
                 commandList.CopyTexture(texture, mapTexture);
                 commandList.End();
@@ -488,7 +529,7 @@ public class Program
             }
 
             {
-                using var mapTexture = gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(textureOut.Width, textureOut.Height, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Staging));
+                using var mapTexture = gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(textureOut.Width, textureOut.Height, 1, 1, PixelFormat.R8_G8_B8_A8_UInt, TextureUsage.Staging));
                 commandList.Begin();
                 commandList.CopyTexture(textureOut, mapTexture);
                 commandList.End();
@@ -509,7 +550,7 @@ public class Program
             }
 
             {
-                using var mapTexture = gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(gfxTexture.Width, gfxTexture.Height, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Staging));
+                using var mapTexture = gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(gfxTexture.Width, gfxTexture.Height, 1, 1, PixelFormat.R8_G8_B8_A8_UInt, TextureUsage.Staging));
                 commandList.Begin();
                 commandList.CopyTexture(gfxTexture, mapTexture);
                 commandList.End();
@@ -528,7 +569,7 @@ public class Program
                 using FileStream fs = File.OpenWrite("gfxTex.png");
                 img.SaveAsPng(fs);
             }
-            // */
+            */
 
             for (int i = 0; i < layouts.Count; i++)
             {
