@@ -129,35 +129,9 @@ vec3 remap(vec3 value, vec3 low1, vec3 high1, vec3 low2, vec3 high2)
 void main()
 {
     fsout_Color = vec4(texture(sampler2D(tex, texSampler), fsin_UV).rgb, 1.0 / (total.x + 1.0));
+    // fsout_Color.rgb = filter_3x3();
     fsout_Color.rgb = filter_5x5();
-    // if (fsout_Color.r > 1 || fsout_Color.g > 1 || fsout_Color.b > 1)
-    {
-        // fsout_Color.rgb = remap(vec3(1), vec3(0), fsout_Color.rgb, vec3(0), vec3(1));
-    }
-    // fsout_Color.rgb = 1 / (fsout_Color.rgb + 1);
     vec3 y3 = fsout_Color.rgb * vec3(0.2126, 0.7152, 0.0722);
     float y = y3.r + y3.g + y3.b;
     fsout_Color.rgb *= 1 / (y + 1);
-    // fsout_Color.rgb = smoothstep(fsout_Color.rgb, vec3(0), vec3(fsout_Color.r + fsout_Color.g + fsout_Color.b) / 3.0);
-    // fsout_Color.r = smoothstep(fsout_Color.r, fsout_Color.r * 0.1, 0.5);
-    // fsout_Color.g = smoothstep(fsout_Color.g, fsout_Color.g * 0.1, 0.5);
-    // fsout_Color.b = smoothstep(fsout_Color.b, fsout_Color.b * 0.1, 0.5);
-    // fsout_Color.rgb = filter_3x3();
-    return;
-    vec3 val = vec3(0);
-    float j = texture(sampler2D(tex, texSampler), fsin_UV).a;// * 255;
-    int i = int(j);
-    i = 1;
-    for (int y = -i; y <= i; y+=i*2)
-    {
-        for (int x = -i; x <= i; x+=i*2)
-        {
-            vec2 offset = vec2(x, y);
-            vec4 norm2 = texture(sampler2D(tex, texSampler), fsin_UV + offset / total.zw);
-            val += norm2.rgb;
-        }
-    }
-    fsout_Color.rgb = (fsout_Color.rgb + val) / 10.0;
-    // fsout_Color.rgb *= filter_3x3();
-    // fsout_Color.rgb = filter_5x5();
 }
