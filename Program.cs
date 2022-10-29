@@ -34,6 +34,7 @@ public class Program
         public MeshVertex[] meshVertices;
         public Vector4[] meshIndices;
         public PointLightObject[] lights;
+        public BVHNodeStruct[] bvhData;
         public uint SizeOf()
         {
             return (uint)(Unsafe.SizeOf<World>() + Unsafe.SizeOf<Sphere>() * spheres.Length);
@@ -87,6 +88,23 @@ public class Program
     {
         public Vector4 min_pos;
         public Vector4 max_pos;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct BVHNodeStruct
+    {
+        public AABB aabb;
+        public Vector4 index;
+    }
+
+    public class BVHTreeNode
+    {
+        public BVHTreeNode parent;
+        public List<BVHTreeNode> children = new List<BVHTreeNode>();
+        // public BVHTreeNode child0;
+        // public BVHTreeNode child1;
+        public AABB aabb;
+        public int meshIdx = -1;
     }
 
     public record ExternalLightData(float size);
@@ -155,6 +173,9 @@ public class Program
             List<MeshVertex> vertices = new List<MeshVertex>();
             List<Vector4> indexes = new List<Vector4>();
             List<PointLightObject> lights = new List<PointLightObject>();
+            BVHTreeNode bvhTree = new BVHTreeNode();
+            List<BVHTreeNode> bvhTrees = new List<BVHTreeNode>();
+            bvhTrees.Add(bvhTree);
 
             foreach (var node in root.LogicalNodes.Where(x => x.Mesh != null))
             {
@@ -206,6 +227,14 @@ public class Program
                     min_pos = new Vector4(min - Vector3.One * 0.1f, 1),
                     max_pos = new Vector4(max + Vector3.One * 0.1f, 1),
                 };
+                var bnode = new BVHTreeNode()
+                {
+                    // parent = bvhTrees.First(x => bvhTrees.Count(y => y.parent == x) < 2),
+                    aabb = aabb,
+                    meshIdx = objects.Count,
+                    // index = new Vector4(bvhTrees.Count, 0, 0, 0),
+                };
+                bvhTrees.Add(bnode);
                 objects.Add(new MeshObject()
                 {
                     model = node.WorldMatrix,
@@ -215,6 +244,179 @@ public class Program
                 });
                 indexes.AddRange(inds);
             }
+
+        #if false
+            AABB rootAABB = new AABB();
+            for (int i = 0; i < bvhTrees.Count; i++)
+            {
+                // AABB aabb = bvhTrees[i].aabb;
+                AABB aabb = rootAABB;
+                for (int j = 0; j < bvhTrees.Count; j++)
+                {
+                    AABB aabb2 = bvhTrees[j].aabb;
+                    if (aabb2.min_pos.X < aabb.min_pos.X)
+                    {
+                        aabb.min_pos.X = aabb2.min_pos.X;
+                    }
+                    if (aabb2.min_pos.Y < aabb.min_pos.Y)
+                    {
+                        aabb.min_pos.Y = aabb2.min_pos.Y;
+                    }
+                    if (aabb2.min_pos.Z < aabb.min_pos.Z)
+                    {
+                        aabb.min_pos.Z = aabb2.min_pos.Z;
+                    }
+                    if (aabb2.min_pos.X > aabb.max_pos.X)
+                    {
+                        aabb.max_pos.X = aabb2.max_pos.X;
+                    }
+                    if (aabb2.max_pos.Y > aabb.max_pos.Y)
+                    {
+                        aabb.max_pos.Y = aabb2.max_pos.Y;
+                    }
+                    if (aabb2.max_pos.Z > aabb.max_pos.Z)
+                    {
+                        aabb.max_pos.Z = aabb2.max_pos.Z;
+                    }
+                    // bvhTrees[i].aabb = aabb;
+                    rootAABB = aabb;
+                }
+            }
+
+            float Sum(Vector4 input)
+            {
+                return input.X * input.X + input.Y * input.Y + input.Z * input.Z;
+            }
+
+            var lst = bvhTrees.ToList();
+            int bvhSize = 4;
+            int parentMostIndex = -1;
+            // while (lst.Count > 16)
+            {
+                var rootParent = new BVHTreeNode();
+                rootParent.parent = null;
+                lst.Add(rootParent);
+                parentMostIndex = lst.IndexOf(rootParent);
+                var arr = lst.Where(x => !lst.Contains(x)).OrderBy(x => Sum(x.aabb.min_pos + (x.aabb.max_pos - x.aabb.min_pos) * 0.5f)).ToArray();
+                // lst.Clear();
+                for (int i = 0; i < arr.Length - (bvhSize - 1); i+=bvhSize)
+                {
+                    AABB aabb = arr[i].aabb;
+                    var p = new BVHTreeNode();
+                    for (int j = 0; j < bvhSize; j++)
+                    {
+                        AABB aabb2 = arr[i+j].aabb;
+                        if (aabb2.min_pos.X < aabb.min_pos.X)
+                        {
+                            aabb.min_pos.X = aabb2.min_pos.X;
+                        }
+                        if (aabb2.min_pos.Y < aabb.min_pos.Y)
+                        {
+                            aabb.min_pos.Y = aabb2.min_pos.Y;
+                        }
+                        if (aabb2.min_pos.Z < aabb.min_pos.Z)
+                        {
+                            aabb.min_pos.Z = aabb2.min_pos.Z;
+                        }
+                        if (aabb2.min_pos.X > aabb.max_pos.X)
+                        {
+                            aabb.max_pos.X = aabb2.max_pos.X;
+                        }
+                        if (aabb2.max_pos.Y > aabb.max_pos.Y)
+                        {
+                            aabb.max_pos.Y = aabb2.max_pos.Y;
+                        }
+                        if (aabb2.max_pos.Z > aabb.max_pos.Z)
+                        {
+                            aabb.max_pos.Z = aabb2.max_pos.Z;
+                        }
+                        // var c = new BVHTreeNode();
+                        // c.aabb = aabb2;
+                        // c.parent = p;
+                        arr[i+j].parent = p;
+                        p.children.Add(arr[i+j]);
+                    }
+                    lst.Add(p);
+                    rootParent.children.Add(p);
+                    /*
+                    AABB aabb = arr[i].aabb;
+                    AABB aabb2 = arr[i+1].aabb;
+                    if (aabb2.min_pos.X < aabb.min_pos.X)
+                    {
+                        aabb.min_pos.X = aabb2.min_pos.X;
+                    }
+                    if (aabb2.min_pos.Y < aabb.min_pos.Y)
+                    {
+                        aabb.min_pos.Y = aabb2.min_pos.Y;
+                    }
+                    if (aabb2.min_pos.Z < aabb.min_pos.Z)
+                    {
+                        aabb.min_pos.Z = aabb2.min_pos.Z;
+                    }
+                    if (aabb2.min_pos.X > aabb.max_pos.X)
+                    {
+                        aabb.max_pos.X = aabb2.max_pos.X;
+                    }
+                    if (aabb2.max_pos.Y > aabb.max_pos.Y)
+                    {
+                        aabb.max_pos.Y = aabb2.max_pos.Y;
+                    }
+                    if (aabb2.max_pos.Z > aabb.max_pos.Z)
+                    {
+                        aabb.max_pos.Z = aabb2.max_pos.Z;
+                    }
+                    var p = new BVHTreeNode()
+                    {
+                        aabb = aabb,
+                        child0 = arr[i],
+                        child1 = arr[i+1],
+                        // index = new Vector4(0, i, i+1, 0),
+                    };
+                    arr[i].parent = p;
+                    arr[i+1].parent = p;
+                    lst.Add(p);
+                    */
+                }
+            }
+
+            var bvh1d = new Dictionary<BVHTreeNode, BVHNodeStruct>();
+            var bvhStack = new Stack<BVHTreeNode>();
+            bvhStack.Push(lst[parentMostIndex]);
+            while (bvhStack.Count > 0)
+            {
+                var p = bvhStack.Pop();
+                if (p.children.Count > 0)
+                {
+                    foreach (var c in p.children)
+                        bvhStack.Push(c);
+                    if (bvh1d.ContainsKey(p))
+                        break;
+                    bvh1d.Add(p, new BVHNodeStruct()
+                    {
+                        aabb = p.aabb,
+                        // index = new Vector4(0, bvh1d.Count + 0, bvh1d.Count + 1, 0),
+                    });
+                }
+                else
+                {
+                    bvh1d.Add(p, new BVHNodeStruct()
+                    {
+                        aabb = p.aabb,
+                        index = new Vector4(1, 0, 0, p.meshIdx),
+                    });
+                }
+            }
+
+            foreach (var item in bvh1d)
+            {
+                var val = item.Value;
+                var index = val.index;
+                index.Y = item.Key.children.Count <= 0 ? -1 : bvh1d.Keys.ToList().IndexOf(item.Key.children[0]);
+                index.Z = item.Key.children.Count <= 1 ? -1 : bvh1d.Keys.ToList().IndexOf(item.Key.children[1]);
+                val.index = index;
+                bvh1d[item.Key] = val;
+            }
+        #endif
 
             foreach (var node in root.LogicalNodes.Where(x => x.PunctualLight != null))
             {
@@ -244,6 +446,10 @@ public class Program
             world.meshIndices = indexes.ToArray();
             world.lights = lights.ToArray();
             // world.spheres = spheres.ToArray();
+        #if false
+            world.bvhData = bvh1d.Values.ToArray();
+        #endif
+            world.bvhData = new BVHNodeStruct[0];
         }
 
         WindowCreateInfo windowCI = new WindowCreateInfo()
@@ -306,10 +512,12 @@ public class Program
             gd.UpdateBuffer(buffer12, 0, world.meshIndices);
             using var buffer13 = gd.ResourceFactory.CreateBuffer(new BufferDescription((uint)(world.lights.Length * Unsafe.SizeOf<PointLightObject>()), BufferUsage.StructuredBufferReadOnly, (uint)Unsafe.SizeOf<PointLightObject>()));
             gd.UpdateBuffer(buffer13, 0, world.lights);
+            using var buffer14 = gd.ResourceFactory.CreateBuffer(new BufferDescription((uint)(world.bvhData.Length * Unsafe.SizeOf<BVHNodeStruct>()), BufferUsage.StructuredBufferReadOnly, (uint)Unsafe.SizeOf<BVHNodeStruct>()));
+            gd.UpdateBuffer(buffer14, 0, world.bvhData);
 
             BindableResource[][] resources = new BindableResource[][]
             {
-                new BindableResource[] { texture, buffer1, buffer2, buffer10, buffer11, buffer12, buffer13, textureOut },
+                new BindableResource[] { texture, buffer1, buffer2, buffer10, buffer11, buffer12, buffer13, buffer14, textureOut },
             };
             List<ResourceLayout> layouts = new List<ResourceLayout>();
             List<ResourceSet> sets = new List<ResourceSet>();

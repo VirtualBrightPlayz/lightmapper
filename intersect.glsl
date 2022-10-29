@@ -231,14 +231,65 @@ void IntersectMeshObject(Ray ray, inout RayHit bestHit, MeshObject mesh, vec4 co
     }
 }
 
+int TraceBVH(BVHNode node, Ray ray, inout RayHit bestHit)
+{
+    if (!CheckAABB(ray, 1.0 / ray.direction.xyz, node.aabb))
+        return -1;
+    if (node.index.x >= 1)
+    {
+        IntersectMeshObject(ray, bestHit, meshes[int(node.index.w)], vec4(0));
+    }
+    else
+    {
+        BVHNode d0 = bvhNodes[int(node.index.y)];
+        BVHNode d1 = bvhNodes[int(node.index.z)];
+        bool ch0 = CheckAABB(ray, 1.0 / ray.direction.xyz, d0.aabb);
+        bool ch1 = CheckAABB(ray, 1.0 / ray.direction.xyz, d1.aabb);
+        if (d0.index.x >= 1)
+            IntersectMeshObject(ray, bestHit, meshes[int(d0.index.w)], vec4(0));
+        if (d1.index.x >= 1)
+            IntersectMeshObject(ray, bestHit, meshes[int(d1.index.w)], vec4(0));
+        // if (ch0 && ch1)
+        {
+            // return -1;
+        }
+        // else
+        if (ch0)
+            return int(node.index.y);
+        else if (ch1)
+            return int(node.index.z);
+        else
+            return -1;
+        // TraceBVH(bvhNodes[uint(node.index.y)], ray, bestHit);
+        // TraceBVH(bvhNodes[uint(node.index.z)], ray, bestHit);
+    }
+}
+
 RayHit Trace(Ray ray, vec3 color, bool canShade)
 {
     RayHit bestHit = CreateRayHit();
     // IntersectGroundPlane(ray, bestHit);
+    /*
+    BVHNode node = bvhNodes[0];
+    for (uint i = 0; i < bvhNodes.length(); i++)
+    {
+        int idx = TraceBVH(node, ray, bestHit);
+        if (idx >= 0)
+        {
+            node = bvhNodes[idx];
+        }
+        else
+        {
+            break;
+        }
+    }
+    */
+    // /*
     for (uint i = 0; i < meshes.length(); i++)
     {
         IntersectMeshObject(ray, bestHit, meshes[i], vec4(color, 0));
     }
+    // */
     for (uint i = 0; i < spheres.length(); i++)
     {
         Sphere sph = spheres[i];

@@ -39,7 +39,11 @@ layout(std430, set = 0, binding = 6) readonly buffer PointLights
 {
     PointLightObject lights[];
 };
-layout(set = 0, binding = 7, rgba32f) uniform image2D outTex;
+layout(std430, set = 0, binding = 7) readonly buffer BVHData
+{
+    BVHNode bvhNodes[];
+};
+layout(set = 0, binding = 8, rgba32f) uniform image2D outTex;
 
 float seed = 0;
 float rand()
@@ -62,7 +66,7 @@ float atten(vec4 lightPos, vec3 pos)
             return att;
             // continue;
         float v = clamp(1.0 - pow(d / lightPos.w, 4), 0, 1) / pow(d, 2);
-        v = clamp(1.0 - pow(d / lightPos.w, 2), 0, 1);
+        v = clamp(1.0 - pow(d / lightPos.w, 1), 0, 1);
         // if (v > 0)
             att += v;
     }
@@ -199,10 +203,10 @@ void TraceMesh(MeshObject mesh, vec2 uv1, bool add)
         {
             ivec2 sizeOut = imageSize(outTex);
             ivec2 size = imageSize(tex);
-            ivec2 pos1 = ivec2(floor(uv1.x * sizeOut.x), floor(uv1.y * sizeOut.y)) + ivec2(x, y) - ivec2(1);
-            ivec2 pos2 = ivec2(floor(uv1.x * sizeOut.x), ceil(uv1.y * sizeOut.y)) + ivec2(x, y) - ivec2(1);
-            ivec2 pos3 = ivec2(ceil(uv1.x * sizeOut.x), floor(uv1.y * sizeOut.y)) + ivec2(x, y) - ivec2(1);
-            ivec2 pos4 = ivec2(ceil(uv1.x * sizeOut.x), ceil(uv1.y * sizeOut.y)) + ivec2(x, y) - ivec2(1);
+            ivec2 pos1 = ivec2(floor(uv1.x * sizeOut.x), floor(uv1.y * sizeOut.y)) + ivec2(x, y);// - ivec2(1);
+            ivec2 pos2 = ivec2(floor(uv1.x * sizeOut.x), ceil(uv1.y * sizeOut.y)) + ivec2(x, y);// - ivec2(1);
+            ivec2 pos3 = ivec2(ceil(uv1.x * sizeOut.x), floor(uv1.y * sizeOut.y)) + ivec2(x, y);// - ivec2(1);
+            ivec2 pos4 = ivec2(ceil(uv1.x * sizeOut.x), ceil(uv1.y * sizeOut.y)) + ivec2(x, y);// - ivec2(1);
             // ivec2 pos2 = ivec2(floor(uv1.x * sizeOut.x), floor(uv1.y * sizeOut.y)) + ivec2(x, y);// - ivec2(1);
             vec4 color = imageLoad(outTex, pos1);
             if (color.a <= 0 || j == 0)
