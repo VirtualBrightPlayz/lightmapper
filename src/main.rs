@@ -111,10 +111,10 @@ fn main() {
             }
         );
 
-        let raytrace_shader_module = state.device.create_shader_module(
+        let compute_shader_module = state.device.create_shader_module(
             wgpu::ShaderModuleDescriptor {
-                label: Some("raytrace shader module"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("raytrace.wgsl").into()),
+                label: Some("compute shader module"),
+                source: wgpu::ShaderSource::Wgsl(include_str!("compute.wgsl").into()),
             }
         );
 
@@ -132,8 +132,8 @@ fn main() {
                 &wgpu::ComputePipelineDescriptor {
                     label: Some("raytrace compute pipeline"),
                     layout: Some(&raytrace_pipeline_layout),
-                    module: &raytrace_shader_module,
-                    entry_point: "main",
+                    module: &compute_shader_module,
+                    entry_point: "main_raytrace",
                 }
             );
 
