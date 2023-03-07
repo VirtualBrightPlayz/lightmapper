@@ -11,3 +11,6 @@ log = "0.4"
 env_logger = "0.10"
 # simple async runtime that just blocks (if this is ported to web this needs to be changed to the browser's javascript async runtime)
 pollster = "0.3"
+cgmath = "0.18"
+easy-gltf = "1.0"
+bytemuck = { version = "1.13", features = ["derive"] }

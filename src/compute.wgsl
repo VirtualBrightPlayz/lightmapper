@@ -75,10 +75,8 @@ var<storage, read> indicies: array<vec4<f32>>;
 @group(0) @binding(5)
 var<storage, read> point_lights: array<PointLightObject>;
 @group(0) @binding(6)
-var<storage, read> bvh_data: array<BVHNode>;
-@group(0) @binding(7)
 var tex: texture_storage_2d<rgba32float, write>;
-@group(0) @binding(8)
+@group(0) @binding(7)
 var out_tex: texture_storage_2d<rgba32float, read_write>;
 
 var<private> last_shade: vec3<f32> = vec3<f32>(1.0, 1.0, 1.0);
