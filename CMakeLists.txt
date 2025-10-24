@@ -65,7 +65,7 @@ foreach(shader_file ${SHADER_SOURCES})
     set(file_dxil "${file_dxil}")
     add_custom_command(
         TARGET lightmap POST_BUILD
-        COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -emit-spirv-via-glsl -target spirv -profile spirv_1_0 -entry main -o $<TARGET_FILE_DIR:lightmap>/assets/${file_spv}.spv
+        COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -emit-spirv-via-glsl -DSLANGC -target spirv -profile spirv_1_0 -entry main -o $<TARGET_FILE_DIR:lightmap>/assets/${file_spv}.spv
         # COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -target spirv -profile spirv_1_3 -entry vertexMain -o $<TARGET_FILE_DIR:lightmap>/assets/${file_spv}.vert.spv
         # COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -target spirv -profile spirv_1_3 -entry fragmentMain -o $<TARGET_FILE_DIR:lightmap>/assets/${file_spv}.frag.spv
         # COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -target dxil -profile sm_6_0 -entry vertexMain -o $<TARGET_FILE_DIR:lightmap>/assets/${file_dxil}.vert.dxil
