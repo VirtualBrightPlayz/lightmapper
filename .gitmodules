@@ -1,0 +1,9 @@
+[submodule "glm"]
+	path = glm
+	url = git@github.com:g-truc/glm.git
+[submodule "tinyobjloader"]
+	path = tinyobjloader
+	url = git@github.com:tinyobjloader/tinyobjloader.git
+[submodule "volk"]
+	path = volk
+	url = git@github.com:zeux/volk.git
