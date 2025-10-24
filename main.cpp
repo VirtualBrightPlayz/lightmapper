@@ -5,6 +5,8 @@
 
 #include "shared_data.h"
 
+#define TINYGLTF_IMPLEMENTATION
+#include "tiny_gltf.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -142,6 +144,9 @@ int main(int argc, char *argv[]) {
             ParamsType params{};
             params.inSeed = float4(0);
             params.offsetPixels = float4(0);
+
+            // tinygltf::TinyGLTF loader{};
+            // loader.LoadBinaryFromFile();
 
             tinyobj::ObjReader reader{};
             if (!reader.ParseFromFile("assets/test.obj")) {
