@@ -157,6 +157,6 @@ void main(uint3 id : SV_DispatchThreadID)
         if (Meshes[i].indices.z < 1)
             continue;
         float4 result = TraceMesh(Meshes[i], uv1, i != 0);
-        outTex.Store(uv, result);
+        outTex[uv] = result;
     }
 }

@@ -112,6 +112,24 @@ bool upload_buffer(SDL_GPUDevice* gpu, SDL_GPUBuffer* buffer, size_t datasize, v
     return true;
 }
 
+void load_glb(std::vector<MeshObject>& meshes, std::vector<MeshVertex>& verts, std::vector<float4>& inds, std::vector<PointLightObject> lights) {
+    tinygltf::TinyGLTF loader{};
+    tinygltf::Model model{};
+    std::string err;
+    std::string warn;
+    if (!loader.LoadBinaryFromFile(&model, &err, &warn, "assets/test.glb")) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Load .glb file failed: %s", err.c_str());
+        return;
+    }
+    for (size_t i = 0; i < model.meshes.size(); i++) {
+        for (size_t j = 0; j < model.meshes[j].primitives.size(); j++) {
+            for (auto& attrib : model.meshes[i].primitives[j].attributes) {
+                tinygltf::Accessor access = model.accessors[attrib.second];
+            }
+        }
+    }
+}
+
 int main(int argc, char *argv[]) {
     if (!SDL_Init(SDL_INIT_EVENTS | SDL_INIT_VIDEO)) {
         return EXIT_FAILURE;
@@ -145,9 +163,6 @@ int main(int argc, char *argv[]) {
             params.inSeed = float4(0);
             params.offsetPixels = float4(0);
 
-            // tinygltf::TinyGLTF loader{};
-            // loader.LoadBinaryFromFile();
-
             tinyobj::ObjReader reader{};
             if (!reader.ParseFromFile("assets/test.obj")) {
                 SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION, "Load .obj file failed: %s", reader.Error().c_str());
@@ -158,6 +173,7 @@ int main(int argc, char *argv[]) {
             std::vector<MeshVertex> verts{};
             std::vector<float4> inds{};
             std::vector<PointLightObject> lights{};
+            load_glb(meshes, verts, inds, lights);
             meshes.reserve(shapes.size());
             for (size_t i = 0; i < shapes.size(); i++) {
                 MeshObject mesh{};
