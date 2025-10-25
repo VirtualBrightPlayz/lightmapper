@@ -112,7 +112,7 @@ bool upload_buffer(SDL_GPUDevice* gpu, SDL_GPUBuffer* buffer, size_t datasize, v
     return true;
 }
 
-void load_glb(std::vector<MeshObject>& meshes, std::vector<MeshVertex>& verts, std::vector<float4>& inds, std::vector<PointLightObject> lights) {
+void load_glb(std::vector<MeshObject>& meshes, std::vector<MeshVertex>& verts, std::vector<uint4>& inds, std::vector<PointLightObject>& lights) {
     tinygltf::TinyGLTF loader{};
     tinygltf::Model model{};
     std::string err;
@@ -122,10 +122,130 @@ void load_glb(std::vector<MeshObject>& meshes, std::vector<MeshVertex>& verts, s
         return;
     }
     for (size_t i = 0; i < model.meshes.size(); i++) {
-        for (size_t j = 0; j < model.meshes[j].primitives.size(); j++) {
-            for (auto& attrib : model.meshes[i].primitives[j].attributes) {
-                tinygltf::Accessor access = model.accessors[attrib.second];
+        for (size_t j = 0; j < model.meshes[i].primitives.size(); j++) {
+            tinygltf::Primitive primitive = model.meshes[i].primitives[j];
+            MeshObject mesh{};
+            mesh.indices.z = 1; // render flag
+
+            // read indices from mesh
+            tinygltf::Accessor indexAccess = model.accessors[primitive.indices];
+            tinygltf::BufferView indexView = model.bufferViews[indexAccess.bufferView];
+            tinygltf::Buffer indexBuffer = model.buffers[indexView.buffer];
+
+            if (indexAccess.type == TINYGLTF_TYPE_SCALAR && indexAccess.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
+                uint16_t* indexData = (uint16_t*)indexBuffer.data.data();
+                mesh.indices.x = (uint32_t)inds.size();
+                mesh.indices.y = (uint32_t)indexView.byteLength / sizeof(uint16_t);
+                for (size_t k = 0; k < indexView.byteLength; k+=indexAccess.ByteStride(indexView)) {
+                    uint32_t index = indexData[(k + indexAccess.byteOffset + indexView.byteOffset) / sizeof(uint16_t)];
+                    // index += (uint32_t)verts.size();
+                    inds.push_back(uint4(index, 0, 0, 0));
+                }
             }
+
+            // read vertices from mesh
+            std::vector<float3> positions{};
+            std::vector<float3> normals{};
+            std::vector<float2> texcoord0{};
+            std::vector<float2> texcoord1{};
+            // read position data
+            if (primitive.attributes.count("POSITION") != 0) {
+                tinygltf::Accessor positionAccess = model.accessors[primitive.attributes["POSITION"]];
+                tinygltf::BufferView positionView = model.bufferViews[positionAccess.bufferView];
+                tinygltf::Buffer positionBuffer = model.buffers[positionView.buffer];
+
+                if (positionAccess.type == TINYGLTF_TYPE_VEC3 /*&& indexAccess.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT*/) {
+                    float3* positionData = (float3*)positionBuffer.data.data();
+                    for (size_t k = 0; k < positionView.byteLength; k+=positionAccess.ByteStride(positionView)) {
+                        float3 position = positionData[(k + positionView.byteOffset) / sizeof(float3)];
+                        positions.push_back(position);
+                    }
+                }
+            }
+            // read normal data
+            if (primitive.attributes.count("NORMAL") != 0) {
+                tinygltf::Accessor positionAccess = model.accessors[primitive.attributes["NORMAL"]];
+                tinygltf::BufferView positionView = model.bufferViews[positionAccess.bufferView];
+                tinygltf::Buffer positionBuffer = model.buffers[positionView.buffer];
+
+                if (positionAccess.type == TINYGLTF_TYPE_VEC3 /*&& indexAccess.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT*/) {
+                    float3* positionData = (float3*)positionBuffer.data.data();
+                    for (size_t k = 0; k < positionView.byteLength; k+=positionAccess.ByteStride(positionView)) {
+                        float3 position = positionData[(k + positionView.byteOffset) / sizeof(float3)];
+                        normals.push_back(position);
+                    }
+                }
+            }
+            // read texcoord0 data
+            if (primitive.attributes.count("TEXCOORD_0") != 0) {
+                tinygltf::Accessor positionAccess = model.accessors[primitive.attributes["TEXCOORD_0"]];
+                tinygltf::BufferView positionView = model.bufferViews[positionAccess.bufferView];
+                tinygltf::Buffer positionBuffer = model.buffers[positionView.buffer];
+
+                if (positionAccess.type == TINYGLTF_TYPE_VEC2 /*&& indexAccess.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT*/) {
+                    float2* positionData = (float2*)positionBuffer.data.data();
+                    for (size_t k = 0; k < positionView.byteLength; k+=positionAccess.ByteStride(positionView)) {
+                        float2 position = positionData[(k + positionView.byteOffset) / sizeof(float2)];
+                        texcoord0.push_back(position);
+                    }
+                }
+            }
+            // read texcoord1 data
+            if (primitive.attributes.count("TEXCOORD_1") != 0) {
+                tinygltf::Accessor positionAccess = model.accessors[primitive.attributes["TEXCOORD_1"]];
+                tinygltf::BufferView positionView = model.bufferViews[positionAccess.bufferView];
+                tinygltf::Buffer positionBuffer = model.buffers[positionView.buffer];
+
+                if (positionAccess.type == TINYGLTF_TYPE_VEC2 /*&& indexAccess.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT*/) {
+                    float2* positionData = (float2*)positionBuffer.data.data();
+                    for (size_t k = 0; k < positionView.byteLength; k+=positionAccess.ByteStride(positionView)) {
+                        float2 position = positionData[(k + positionView.byteOffset) / sizeof(float2)];
+                        texcoord1.push_back(position);
+                    }
+                }
+            }
+            // compile the data into the MeshVertex struct
+            if (positions.size() == normals.size() && positions.size() == texcoord0.size() && positions.size() == texcoord1.size()) {
+                for (size_t k = 0; k < positions.size(); k++) {
+                    MeshVertex vertex{};
+                    vertex.position = float4(positions[k], 0);
+                    vertex.normal = float4(normals[k], 0);
+                    vertex.uv01 = float4(texcoord0[k], texcoord1[k]);
+                    verts.push_back(vertex);
+                    if (k == 0) {
+                        mesh.aabb.min_pos = vertex.position;
+                        mesh.aabb.max_pos = vertex.position;
+                    } else {
+                        mesh.aabb.min_pos = glm::min(mesh.aabb.min_pos, vertex.position);
+                        mesh.aabb.max_pos = glm::max(mesh.aabb.max_pos, vertex.position);
+                    }
+                }
+            }
+
+            mesh.model = glm::identity<float4x4>();
+            mesh.invModel = glm::inverse(mesh.model);
+
+            meshes.push_back(mesh);
+        }
+    }
+
+    for (size_t i = 0; i < model.nodes.size(); i++) {
+        tinygltf::Node node = model.nodes[i];
+        if (node.light != -1) {
+            tinygltf::Light mdlLight = model.lights[node.light];
+            PointLightObject light{};
+            light.color.r = (float)mdlLight.color[0];
+            light.color.g = (float)mdlLight.color[1];
+            light.color.b = (float)mdlLight.color[2];
+            light.color.a = (float)mdlLight.intensity / 1000; // 1000 lumens = 1 intensity?
+            light.position.x = (float)node.translation[0];
+            light.position.y = (float)node.translation[1];
+            light.position.z = (float)node.translation[2];
+            light.position.w = (float)mdlLight.range;
+            if (mdlLight.extras.IsObject() && mdlLight.extras.Has("size")) {
+                light.data.x = (float)mdlLight.extras.Get("size").GetNumberAsDouble();
+            }
+            lights.push_back(light);
         }
     }
 }
@@ -163,17 +283,20 @@ int main(int argc, char *argv[]) {
             params.inSeed = float4(0);
             params.offsetPixels = float4(0);
 
+            /*
             tinyobj::ObjReader reader{};
             if (!reader.ParseFromFile("assets/test.obj")) {
                 SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION, "Load .obj file failed: %s", reader.Error().c_str());
             }
             auto shapes = reader.GetShapes();
             auto attribs = reader.GetAttrib();
+            */
             std::vector<MeshObject> meshes{};
             std::vector<MeshVertex> verts{};
-            std::vector<float4> inds{};
+            std::vector<uint4> inds{};
             std::vector<PointLightObject> lights{};
             load_glb(meshes, verts, inds, lights);
+            /*
             meshes.reserve(shapes.size());
             for (size_t i = 0; i < shapes.size(); i++) {
                 MeshObject mesh{};
@@ -203,14 +326,17 @@ int main(int argc, char *argv[]) {
                 mesh.aabb.max_pos = float4(10);
                 meshes.push_back(mesh);
             }
+            */
+            /*
             {
                 PointLightObject light{};
                 // w = range
-                light.position = float4(0, 0, 5, 10);
+                light.position = float4(0, 0, 5, 100);
                 light.color = float4(1);
                 light.data.x = 0.1f;
                 lights.push_back(light);
             }
+            */
 
             SDL_GPUBuffer* paramsBuffer = nullptr;
             SDL_GPUBuffer* meshesBuffer = nullptr;
@@ -228,8 +354,8 @@ int main(int argc, char *argv[]) {
             create_buffer(gpu, sizeof(MeshVertex) * verts.size(), &vertsBuffer);
             upload_buffer(gpu, vertsBuffer, sizeof(MeshVertex) * verts.size(), verts.data());
 
-            create_buffer(gpu, sizeof(float4) * inds.size(), &indsBuffer);
-            upload_buffer(gpu, indsBuffer, sizeof(float4) * inds.size(), inds.data());
+            create_buffer(gpu, sizeof(uint4) * inds.size(), &indsBuffer);
+            upload_buffer(gpu, indsBuffer, sizeof(uint4) * inds.size(), inds.data());
 
             create_buffer(gpu, sizeof(PointLightObject) * lights.size(), &lightsBuffer);
             upload_buffer(gpu, lightsBuffer, sizeof(PointLightObject) * lights.size(), lights.data());
@@ -285,7 +411,7 @@ int main(int argc, char *argv[]) {
                             SDL_WaitForGPUFences(gpu, true, &fence, 1);
                             SDL_ReleaseGPUFence(gpu, fence);
                             void* rawBufferData = SDL_MapGPUTransferBuffer(gpu, transferBuffer, true);
-                            stbi_flip_vertically_on_write(1);
+                            stbi_flip_vertically_on_write(0);
                             stbi_write_png("output.png", w, h, 4, rawBufferData, w * 4);
                             SDL_UnmapGPUTransferBuffer(gpu, transferBuffer);
                         }

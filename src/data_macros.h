@@ -15,4 +15,6 @@
 
 typedef glm::mat4 float4x4;
 typedef glm::vec4 float4;
-typedef glm::mat4 float4x4;
+typedef glm::vec3 float3;
+typedef glm::vec2 float2;
+typedef glm::uvec4 uint4;

@@ -22,7 +22,7 @@ struct MeshObject
 {
     float4x4 model;
     float4x4 invModel;
-    float4 indices;
+    uint4 indices;
     AABB aabb;
 };
 

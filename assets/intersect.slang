@@ -55,7 +55,7 @@ bool IntersectTriangle_MT97(Ray ray, float3 vert0, float3 vert1, float3 vert2, i
     return true;
 }
 
-void IntersectMeshObject(Ray ray, inout RayHit bestHit, MeshObject mesh, float4 color, IArray<MeshVertex> meshVertices, IArray<float4> meshIndices)
+void IntersectMeshObject(Ray ray, inout RayHit bestHit, MeshObject mesh, float4 color, IArray<MeshVertex> meshVertices, IArray<uint4> meshIndices)
 {
     if (!CheckAABB(ray, 1.0 / ray.direction.xyz, mesh.aabb))
         // if ((CheckAABB(ray, 1.0 / ray.direction.xyz, mesh.aabb) && !(mesh.aabb.max_pos.x > ray.origin.x && mesh.aabb.min_pos.x < ray.origin.x && mesh.aabb.max_pos.y > ray.origin.y && mesh.aabb.min_pos.y < ray.origin.y && mesh.aabb.max_pos.z > ray.origin.z && mesh.aabb.min_pos.z < ray.origin.z)))

@@ -6,7 +6,7 @@ layout(binding = 0, set = 1) RWTexture2D<float4> outTex;
 layout(binding = 0, set = 0) StructuredBuffer<ParamsType> Params;
 layout(binding = 1, set = 0) StructuredBuffer<MeshObject> Meshes;
 layout(binding = 2, set = 0) StructuredBuffer<MeshVertex> Vertices;
-layout(binding = 3, set = 0) StructuredBuffer<float4> Indices;
+layout(binding = 3, set = 0) StructuredBuffer<uint4> Indices;
 layout(binding = 4, set = 0) StructuredBuffer<PointLightObject> PointLights;
 
 static float seed = 0;
