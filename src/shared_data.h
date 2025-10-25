@@ -9,7 +9,7 @@ struct ParamsType
     float4x4 view;
     float4x4 invProj;
     float4 inSeed;
-    float4 offsetPixels;
+    uint4 offsetPixels;
 };
 
 struct AABB

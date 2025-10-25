@@ -2,6 +2,7 @@
 #include <iostream>
 #include <fstream>
 #include <vector>
+#include <map>
 
 #include "shared_data.h"
 
@@ -117,15 +118,19 @@ void load_glb(std::vector<MeshObject>& meshes, std::vector<MeshVertex>& verts, s
     tinygltf::Model model{};
     std::string err;
     std::string warn;
-    if (!loader.LoadBinaryFromFile(&model, &err, &warn, "assets/test.glb")) {
+    if (!loader.LoadBinaryFromFile(&model, &err, &warn, "assets/test1.glb")) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Load .glb file failed: %s", err.c_str());
         return;
     }
+
+    // TODO: support meshes with multiple primitives/materials
+    for (size_t i = 0; i < model.buffers.size(); i++) {
+    }
+
     for (size_t i = 0; i < model.meshes.size(); i++) {
         for (size_t j = 0; j < model.meshes[i].primitives.size(); j++) {
             tinygltf::Primitive primitive = model.meshes[i].primitives[j];
             MeshObject mesh{};
-            mesh.indices.z = 1; // render flag
 
             // read indices from mesh
             tinygltf::Accessor indexAccess = model.accessors[primitive.indices];
@@ -138,7 +143,7 @@ void load_glb(std::vector<MeshObject>& meshes, std::vector<MeshVertex>& verts, s
                 mesh.indices.y = (uint32_t)indexView.byteLength / sizeof(uint16_t);
                 for (size_t k = 0; k < indexView.byteLength; k+=indexAccess.ByteStride(indexView)) {
                     uint32_t index = indexData[(k + indexAccess.byteOffset + indexView.byteOffset) / sizeof(uint16_t)];
-                    // index += (uint32_t)verts.size();
+                    index += (uint32_t)verts.size();
                     inds.push_back(uint4(index, 0, 0, 0));
                 }
             }
@@ -231,6 +236,31 @@ void load_glb(std::vector<MeshObject>& meshes, std::vector<MeshVertex>& verts, s
 
     for (size_t i = 0; i < model.nodes.size(); i++) {
         tinygltf::Node node = model.nodes[i];
+        if (node.mesh != -1) {
+            float4x4 t = glm::identity<float4x4>();
+            float4x4 r = glm::identity<float4x4>();
+            float4x4 s = glm::identity<float4x4>();
+            if (node.translation.size() == 3)
+                t = glm::translate(float4x4(), *(float3*)node.translation.data());
+            if (node.rotation.size() == 4)
+                r = float4x4(*(glm::quat*)node.rotation.data());
+            if (node.scale.size() == 3)
+                s = glm::scale(float4x4(), *(float3*)node.translation.data());
+            float4x4 m = t * r * s;
+            size_t meshIndex = 0;
+            for (size_t j = 0; j < model.meshes.size(); j++) {
+                if (j == node.mesh) {
+                    for (size_t k = 0; k < model.meshes[j].primitives.size(); k++) {
+                        meshes[meshIndex + k].model = m;
+                        meshes[meshIndex + k].invModel = glm::inverse(m);
+                        meshes[meshIndex + k].indices.z = 1; // render flag
+                    }
+                    break;
+                } else {
+                    meshIndex += model.meshes[j].primitives.size();
+                }
+            }
+        }
         if (node.light != -1) {
             tinygltf::Light mdlLight = model.lights[node.light];
             PointLightObject light{};
@@ -238,9 +268,11 @@ void load_glb(std::vector<MeshObject>& meshes, std::vector<MeshVertex>& verts, s
             light.color.g = (float)mdlLight.color[1];
             light.color.b = (float)mdlLight.color[2];
             light.color.a = (float)mdlLight.intensity / 1000; // 1000 lumens = 1 intensity?
-            light.position.x = (float)node.translation[0];
-            light.position.y = (float)node.translation[1];
-            light.position.z = (float)node.translation[2];
+            if (node.translation.size() == 3) {
+                light.position.x = (float)node.translation[0];
+                light.position.y = (float)node.translation[1];
+                light.position.z = (float)node.translation[2];
+            }
             light.position.w = (float)mdlLight.range;
             if (mdlLight.extras.IsObject() && mdlLight.extras.Has("size")) {
                 light.data.x = (float)mdlLight.extras.Get("size").GetNumberAsDouble();
@@ -270,18 +302,21 @@ int main(int argc, char *argv[]) {
 
     int w = 1024;
     int h = w;
+    int calcWidth = 128;
     size_t filesize = 0;
     uint8_t* lightmap = malloc_file("assets/lightmap.spv", &filesize);
     if (lightmap == nullptr) {
         SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION, "Lightmap shader file not found");
     } else {
         SDL_GPUComputePipeline* pipeline = create_pipeline(gpu, filesize, lightmap);
+        // free(lightmap);
+        // lightmap = nullptr;
         if (pipeline == nullptr) {
             SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION, "Compute pipeline creation failed: %s", SDL_GetError());
         } else {
             ParamsType params{};
             params.inSeed = float4(0);
-            params.offsetPixels = float4(0);
+            params.offsetPixels = uint4(0);
 
             /*
             tinyobj::ObjReader reader{};
@@ -379,43 +414,50 @@ int main(int argc, char *argv[]) {
                 if (transferBuffer == nullptr) {
                     SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION, "GPU transfer buffer creation failed: %s", SDL_GetError());
                 } else {
-                    SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(gpu);
-                    if (cmdbuf == nullptr) {
-                        SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION, "GPU command buffer acquisition failed: %s", SDL_GetError());
-                    } else {
-                        // compute pass
-                        SDL_GPUStorageTextureReadWriteBinding binding{};
-                        binding.texture = texture;
-                        binding.cycle = true;
-                        SDL_GPUComputePass* computePass = SDL_BeginGPUComputePass(cmdbuf, &binding, 1, nullptr, 0);
-                        SDL_GPUBuffer* bufferBindings[] = {paramsBuffer, meshesBuffer, vertsBuffer, indsBuffer, lightsBuffer};
-                        SDL_BindGPUComputeStorageBuffers(computePass, 0, bufferBindings, 5);
-                        SDL_BindGPUComputePipeline(computePass, pipeline);
-                        SDL_DispatchGPUCompute(computePass, w / 8, h / 8, 1);
-                        SDL_EndGPUComputePass(computePass);
-                        // copy pass
-                        SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(cmdbuf);
-                        SDL_GPUTextureRegion sourceRegion{};
-                        sourceRegion.texture = texture;
-                        sourceRegion.w = w;
-                        sourceRegion.h = h;
-                        sourceRegion.d = 1;
-                        SDL_GPUTextureTransferInfo destInfo{};
-                        destInfo.transfer_buffer = transferBuffer;
-                        SDL_DownloadFromGPUTexture(copyPass, &sourceRegion, &destInfo);
-                        SDL_EndGPUCopyPass(copyPass);
-                        SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdbuf);
-                        if (fence == nullptr) {
-                            SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION, "GPU command buffer submission failed: %s", SDL_GetError());
-                        } else {
-                            SDL_WaitForGPUFences(gpu, true, &fence, 1);
-                            SDL_ReleaseGPUFence(gpu, fence);
-                            void* rawBufferData = SDL_MapGPUTransferBuffer(gpu, transferBuffer, true);
-                            stbi_flip_vertically_on_write(0);
-                            stbi_write_png("output.png", w, h, 4, rawBufferData, w * 4);
-                            SDL_UnmapGPUTransferBuffer(gpu, transferBuffer);
+                    for (size_t i = 0; i < w; i+=calcWidth) {
+                        for (size_t j = 0; j < h; j+=calcWidth) {
+                            params.offsetPixels.x = (uint32_t)i;
+                            params.offsetPixels.y = (uint32_t)j;
+                            upload_buffer(gpu, paramsBuffer, sizeof(ParamsType), &params);
+                            SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(gpu);
+                            if (cmdbuf == nullptr) {
+                                SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION, "GPU command buffer acquisition failed: %s", SDL_GetError());
+                            } else {
+                                // compute pass
+                                SDL_GPUStorageTextureReadWriteBinding binding{};
+                                binding.texture = texture;
+                                binding.cycle = true;
+                                SDL_GPUComputePass* computePass = SDL_BeginGPUComputePass(cmdbuf, &binding, 1, nullptr, 0);
+                                SDL_GPUBuffer* bufferBindings[] = {paramsBuffer, meshesBuffer, vertsBuffer, indsBuffer, lightsBuffer};
+                                SDL_BindGPUComputeStorageBuffers(computePass, 0, bufferBindings, 5);
+                                SDL_BindGPUComputePipeline(computePass, pipeline);
+                                SDL_DispatchGPUCompute(computePass, calcWidth / 8, calcWidth / 8, 1);
+                                SDL_EndGPUComputePass(computePass);
+                                // copy pass
+                                SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(cmdbuf);
+                                SDL_GPUTextureRegion sourceRegion{};
+                                sourceRegion.texture = texture;
+                                sourceRegion.w = w;
+                                sourceRegion.h = h;
+                                sourceRegion.d = 1;
+                                SDL_GPUTextureTransferInfo destInfo{};
+                                destInfo.transfer_buffer = transferBuffer;
+                                SDL_DownloadFromGPUTexture(copyPass, &sourceRegion, &destInfo);
+                                SDL_EndGPUCopyPass(copyPass);
+                                SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdbuf);
+                                if (fence == nullptr) {
+                                    SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION, "GPU command buffer submission failed: %s", SDL_GetError());
+                                } else {
+                                    SDL_WaitForGPUFences(gpu, true, &fence, 1);
+                                    SDL_ReleaseGPUFence(gpu, fence);
+                                }
+                            }
                         }
                     }
+                    void* rawBufferData = SDL_MapGPUTransferBuffer(gpu, transferBuffer, true);
+                    stbi_flip_vertically_on_write(0);
+                    stbi_write_png("output.png", w, h, 4, rawBufferData, w * 4);
+                    SDL_UnmapGPUTransferBuffer(gpu, transferBuffer);
                     SDL_ReleaseGPUTransferBuffer(gpu, transferBuffer);
                 }
                 SDL_ReleaseGPUTexture(gpu, texture);

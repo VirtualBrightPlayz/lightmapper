@@ -150,13 +150,15 @@ void main(uint3 id : SV_DispatchThreadID)
     seed = Params[0].inSeed.x;
     int2 sizeOut;
     outTex.GetDimensions(sizeOut.x, sizeOut.y);
-    uint2 uv = uint2(Params[0].offsetPixels.xy) + id.xy;
+    uint2 uv = Params[0].offsetPixels.xy + id.xy;
     float2 uv1 = (uv + 0.5) / float2(sizeOut);
     for (int i = 0; i < Meshes.getCount(); i++)
     {
         if (Meshes[i].indices.z < 1)
             continue;
         float4 result = TraceMesh(Meshes[i], uv1, i != 0);
-        outTex[uv] = result;
+        if (result.w > 0) {
+            outTex[uv] = result;
+        }
     }
 }
