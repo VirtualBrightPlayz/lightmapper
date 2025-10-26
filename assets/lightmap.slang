@@ -47,20 +47,6 @@ float3 GetBarycentric(float2 a, float2 b, float2 c, float2 p)
     uvw.y = areaCAP / areaABC;
     uvw.z = 1 - uvw.x - uvw.y;
     return uvw;
-
-    float2 v0 = b - a;
-    float2 v1 = c - a;
-    float2 v2 = p - a;
-    float d00 = dot(v0, v0);
-    float d01 = dot(v0, v1);
-    float d11 = dot(v1, v1);
-    float d20 = dot(v2, v0);
-    float d21 = dot(v2, v1);
-    float denom = d00 * d11 - d01 * d01;
-    uvw.y = (d11 * d20 - d01 * d21) / denom;
-    uvw.z = (d00 * d21 - d01 * d20) / denom;
-    uvw.x = 1 - uvw.y - uvw.z;
-    return uvw;
 }
 
 Ray CreateRayFromTriangle(float4x4 model, float4x4 invModel, MeshVertex v0, MeshVertex v1, MeshVertex v2, float3 uvw)
