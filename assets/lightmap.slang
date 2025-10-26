@@ -2,7 +2,7 @@
 #include "ray.slang"
 #include "intersect.slang"
 
-layout(binding = 0, set = 1) RWTexture2D<float4> outTex;
+layout(binding = 0, set = 1) [format("rgba8")] RWTexture2D<float4> outTex;
 layout(binding = 0, set = 0) StructuredBuffer<ParamsType> Params;
 layout(binding = 1, set = 0) StructuredBuffer<MeshObject> Meshes;
 layout(binding = 2, set = 0) StructuredBuffer<MeshVertex> Vertices;
@@ -30,9 +30,24 @@ float atten(float4 lightPos, float3 pos)
     return att;
 }
 
+float GetArea(float2 a, float2 b, float2 c)
+{
+    return (a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y)) / 2;
+}
+
 // https://gamedev.stackexchange.com/questions/23743/whats-the-most-efficient-way-to-find-barycentric-coordinates
+// https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/barycentric-coordinates.html
 float3 GetBarycentric(float2 a, float2 b, float2 c, float2 p)
 {
+    float areaABC = GetArea(a, b, c);
+    float areaBCP = GetArea(b, c, p);
+    float areaCAP = GetArea(c, a, p);
+    float3 uvw = float3(0);
+    uvw.x = areaBCP / areaABC;
+    uvw.y = areaCAP / areaABC;
+    uvw.z = 1 - uvw.x - uvw.y;
+    return uvw;
+
     float2 v0 = b - a;
     float2 v1 = c - a;
     float2 v2 = p - a;
@@ -42,7 +57,6 @@ float3 GetBarycentric(float2 a, float2 b, float2 c, float2 p)
     float d20 = dot(v2, v0);
     float d21 = dot(v2, v1);
     float denom = d00 * d11 - d01 * d01;
-    float3 uvw = float3(0);
     uvw.y = (d11 * d20 - d01 * d21) / denom;
     uvw.z = (d00 * d21 - d01 * d20) / denom;
     uvw.x = 1 - uvw.y - uvw.z;
@@ -81,14 +95,16 @@ float4 TraceMesh(MeshObject mesh, float2 uv1)
     float2 halfPixel = 0.5 / sizeOut;
     uint offset = uint(mesh.indices.x);
     uint count = offset + uint(mesh.indices.y);
+    float3 normal = float3(0);
+    float3 result = float3(0);
     for (uint i = offset; i < count; i += 3)
     {
         MeshVertex v0 = Vertices[uint(Indices[i].x)];
         MeshVertex v1 = Vertices[uint(Indices[i + 1].x)];
         MeshVertex v2 = Vertices[uint(Indices[i + 2].x)];
         float3 uvw = GetBarycentric(v0.uv01.zw, v1.uv01.zw, v2.uv01.zw, uv1);
-        float2 uvmax = max(max(v0.uv01.zw, v1.uv01.zw), v2.uv01.zw);// + halfPixel;
-        float2 uvmin = min(min(v0.uv01.zw, v1.uv01.zw), v2.uv01.zw);// - halfPixel;
+        float2 uvmax = max(max(v0.uv01.zw, v1.uv01.zw), v2.uv01.zw) + halfPixel;
+        float2 uvmin = min(min(v0.uv01.zw, v1.uv01.zw), v2.uv01.zw) - halfPixel;
         float minmax = EPSILON;
         if (!(uvw.x >= -minmax && uvw.x <= 1 + minmax && uvw.y >= -minmax && uvw.y <= 1 + minmax && uvw.z >= -minmax && uvw.z <= 1 + minmax))
         // if (uvw.x + uvw.y + uvw.z < 1 - EPSILON || uvw.x + uvw.y + uvw.z > 1 + EPSILON)
@@ -103,8 +119,6 @@ float4 TraceMesh(MeshObject mesh, float2 uv1)
         Ray ray = CreateRayFromTriangle(mesh.model, mesh.invModel, v0, v1, v2, uvw);
         float3 wpos = ray.origin.xyz;
         float3 wnorm = ray.direction.xyz;
-        float3 normal = float3(0);
-        float3 result = float3(0);
         float alpha = 0;
         float amax = 0;
         for (uint k = 0; k < PointLights.getCount(); k++)
@@ -136,11 +150,10 @@ float4 TraceMesh(MeshObject mesh, float2 uv1)
             }
             result += result2 / 4.0;
         }
-        result = uvw;
         // int2 pos1 = int2(uv1 * sizeOut);
         return float4(result, 1);
     }
-    return float4(0);
+    return float4(result, 0);
 }
 
 [shader("compute")]
