@@ -74,7 +74,7 @@ RayHit Trace(Ray ray)
     return Trace(ray, float3(0), false);
 }
 
-float4 TraceMesh(MeshObject mesh, float2 uv1, bool add)
+float4 TraceMesh(MeshObject mesh, float2 uv1)
 {
     int2 sizeOut;
     outTex.GetDimensions(sizeOut.x, sizeOut.y);
@@ -87,8 +87,8 @@ float4 TraceMesh(MeshObject mesh, float2 uv1, bool add)
         MeshVertex v1 = Vertices[uint(Indices[i + 1].x)];
         MeshVertex v2 = Vertices[uint(Indices[i + 2].x)];
         float3 uvw = GetBarycentric(v0.uv01.zw, v1.uv01.zw, v2.uv01.zw, uv1);
-        float2 uvmax = max(max(v0.uv01.zw, v1.uv01.zw), v2.uv01.zw) + halfPixel;
-        float2 uvmin = min(min(v0.uv01.zw, v1.uv01.zw), v2.uv01.zw) - halfPixel;
+        float2 uvmax = max(max(v0.uv01.zw, v1.uv01.zw), v2.uv01.zw);// + halfPixel;
+        float2 uvmin = min(min(v0.uv01.zw, v1.uv01.zw), v2.uv01.zw);// - halfPixel;
         float minmax = EPSILON;
         if (!(uvw.x >= -minmax && uvw.x <= 1 + minmax && uvw.y >= -minmax && uvw.y <= 1 + minmax && uvw.z >= -minmax && uvw.z <= 1 + minmax))
         // if (uvw.x + uvw.y + uvw.z < 1 - EPSILON || uvw.x + uvw.y + uvw.z > 1 + EPSILON)
@@ -136,6 +136,7 @@ float4 TraceMesh(MeshObject mesh, float2 uv1, bool add)
             }
             result += result2 / 4.0;
         }
+        result = uvw;
         // int2 pos1 = int2(uv1 * sizeOut);
         return float4(result, 1);
     }
@@ -156,7 +157,7 @@ void main(uint3 id : SV_DispatchThreadID)
     {
         if (Meshes[i].indices.z < 1)
             continue;
-        float4 result = TraceMesh(Meshes[i], uv1, i != 0);
+        float4 result = TraceMesh(Meshes[i], uv1);
         if (result.w > 0) {
             outTex[uv] = result;
         }

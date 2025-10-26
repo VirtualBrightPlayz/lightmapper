@@ -123,28 +123,23 @@ void load_glb(std::vector<MeshObject>& meshes, std::vector<MeshVertex>& verts, s
         return;
     }
 
-    // TODO: support meshes with multiple primitives/materials
-    for (size_t i = 0; i < model.buffers.size(); i++) {
-    }
-
     for (size_t i = 0; i < model.meshes.size(); i++) {
         for (size_t j = 0; j < model.meshes[i].primitives.size(); j++) {
             tinygltf::Primitive primitive = model.meshes[i].primitives[j];
             MeshObject mesh{};
 
             // read indices from mesh
+            std::vector<uint32_t> indsTmp{};
             tinygltf::Accessor indexAccess = model.accessors[primitive.indices];
             tinygltf::BufferView indexView = model.bufferViews[indexAccess.bufferView];
             tinygltf::Buffer indexBuffer = model.buffers[indexView.buffer];
 
             if (indexAccess.type == TINYGLTF_TYPE_SCALAR && indexAccess.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
                 uint16_t* indexData = (uint16_t*)indexBuffer.data.data();
-                mesh.indices.x = (uint32_t)inds.size();
-                mesh.indices.y = (uint32_t)indexView.byteLength / sizeof(uint16_t);
+                assert(indexAccess.ByteStride(indexView) == sizeof(uint16_t));
                 for (size_t k = 0; k < indexView.byteLength; k+=indexAccess.ByteStride(indexView)) {
                     uint32_t index = indexData[(k + indexAccess.byteOffset + indexView.byteOffset) / sizeof(uint16_t)];
-                    index += (uint32_t)verts.size();
-                    inds.push_back(uint4(index, 0, 0, 0));
+                    indsTmp.push_back(index);
                 }
             }
 
@@ -159,10 +154,11 @@ void load_glb(std::vector<MeshObject>& meshes, std::vector<MeshVertex>& verts, s
                 tinygltf::BufferView positionView = model.bufferViews[positionAccess.bufferView];
                 tinygltf::Buffer positionBuffer = model.buffers[positionView.buffer];
 
-                if (positionAccess.type == TINYGLTF_TYPE_VEC3 /*&& indexAccess.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT*/) {
+                if (positionAccess.type == TINYGLTF_TYPE_VEC3 && positionAccess.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT) {
                     float3* positionData = (float3*)positionBuffer.data.data();
+                    assert(positionAccess.ByteStride(positionView) == sizeof(float3));
                     for (size_t k = 0; k < positionView.byteLength; k+=positionAccess.ByteStride(positionView)) {
-                        float3 position = positionData[(k + positionView.byteOffset) / sizeof(float3)];
+                        float3 position = positionData[(k + positionAccess.byteOffset + positionView.byteOffset) / sizeof(float3)];
                         positions.push_back(position);
                     }
                 }
@@ -173,10 +169,11 @@ void load_glb(std::vector<MeshObject>& meshes, std::vector<MeshVertex>& verts, s
                 tinygltf::BufferView positionView = model.bufferViews[positionAccess.bufferView];
                 tinygltf::Buffer positionBuffer = model.buffers[positionView.buffer];
 
-                if (positionAccess.type == TINYGLTF_TYPE_VEC3 /*&& indexAccess.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT*/) {
+                if (positionAccess.type == TINYGLTF_TYPE_VEC3 && positionAccess.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT) {
                     float3* positionData = (float3*)positionBuffer.data.data();
+                    assert(positionAccess.ByteStride(positionView) == sizeof(float3));
                     for (size_t k = 0; k < positionView.byteLength; k+=positionAccess.ByteStride(positionView)) {
-                        float3 position = positionData[(k + positionView.byteOffset) / sizeof(float3)];
+                        float3 position = positionData[(k + positionAccess.byteOffset + positionView.byteOffset) / sizeof(float3)];
                         normals.push_back(position);
                     }
                 }
@@ -187,10 +184,11 @@ void load_glb(std::vector<MeshObject>& meshes, std::vector<MeshVertex>& verts, s
                 tinygltf::BufferView positionView = model.bufferViews[positionAccess.bufferView];
                 tinygltf::Buffer positionBuffer = model.buffers[positionView.buffer];
 
-                if (positionAccess.type == TINYGLTF_TYPE_VEC2 /*&& indexAccess.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT*/) {
+                if (positionAccess.type == TINYGLTF_TYPE_VEC2 && positionAccess.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT) {
                     float2* positionData = (float2*)positionBuffer.data.data();
+                    assert(positionAccess.ByteStride(positionView) == sizeof(float2));
                     for (size_t k = 0; k < positionView.byteLength; k+=positionAccess.ByteStride(positionView)) {
-                        float2 position = positionData[(k + positionView.byteOffset) / sizeof(float2)];
+                        float2 position = positionData[(k + positionAccess.byteOffset + positionView.byteOffset) / sizeof(float2)];
                         texcoord0.push_back(position);
                     }
                 }
@@ -201,21 +199,29 @@ void load_glb(std::vector<MeshObject>& meshes, std::vector<MeshVertex>& verts, s
                 tinygltf::BufferView positionView = model.bufferViews[positionAccess.bufferView];
                 tinygltf::Buffer positionBuffer = model.buffers[positionView.buffer];
 
-                if (positionAccess.type == TINYGLTF_TYPE_VEC2 /*&& indexAccess.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT*/) {
+                if (positionAccess.type == TINYGLTF_TYPE_VEC2 && positionAccess.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT) {
                     float2* positionData = (float2*)positionBuffer.data.data();
+                    assert(positionAccess.ByteStride(positionView) == sizeof(float2));
                     for (size_t k = 0; k < positionView.byteLength; k+=positionAccess.ByteStride(positionView)) {
-                        float2 position = positionData[(k + positionView.byteOffset) / sizeof(float2)];
+                        float2 position = positionData[(k + positionAccess.byteOffset + positionView.byteOffset) / sizeof(float2)];
+                        // position = glm::fract(position);
                         texcoord1.push_back(position);
                     }
                 }
             }
             // compile the data into the MeshVertex struct
-            if (positions.size() == normals.size() && positions.size() == texcoord0.size() && positions.size() == texcoord1.size()) {
-                for (size_t k = 0; k < positions.size(); k++) {
+            if (positions.size() != 0 && positions.size() == normals.size() && positions.size() == texcoord0.size() && positions.size() == texcoord1.size()) {
+                mesh.indices.x = (uint32_t)inds.size();
+                mesh.indices.y = (uint32_t)indsTmp.size();
+                for (size_t k = 0; k < indsTmp.size(); k++) {
+                    assert(indsTmp[k] < positions.size());
                     MeshVertex vertex{};
-                    vertex.position = float4(positions[k], 0);
-                    vertex.normal = float4(normals[k], 0);
-                    vertex.uv01 = float4(texcoord0[k], texcoord1[k]);
+                    size_t k2 = indsTmp[k];
+                    vertex.position = float4(positions[k2], 0);
+                    vertex.normal = float4(normals[k2], 0);
+                    vertex.uv01 = float4(texcoord0[k2], texcoord1[k2]);
+                    inds.push_back(uint4(verts.size(), 0, 0, 0));
+                    // inds.push_back(uint4(indsTmp[k] + mesh.indices.x, 0, 0, 0));
                     verts.push_back(vertex);
                     if (k == 0) {
                         mesh.aabb.min_pos = vertex.position;
@@ -225,6 +231,8 @@ void load_glb(std::vector<MeshObject>& meshes, std::vector<MeshVertex>& verts, s
                         mesh.aabb.max_pos = glm::max(mesh.aabb.max_pos, vertex.position);
                     }
                 }
+            } else {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "positions, normals, texcoord0 and texcoord1 are different sizes");
             }
 
             mesh.model = glm::identity<float4x4>();
@@ -245,7 +253,7 @@ void load_glb(std::vector<MeshObject>& meshes, std::vector<MeshVertex>& verts, s
             if (node.rotation.size() == 4)
                 r = float4x4(*(glm::quat*)node.rotation.data());
             if (node.scale.size() == 3)
-                s = glm::scale(float4x4(), *(float3*)node.translation.data());
+                s = glm::scale(float4x4(), *(float3*)node.scale.data());
             float4x4 m = t * r * s;
             size_t meshIndex = 0;
             for (size_t j = 0; j < model.meshes.size(); j++) {
