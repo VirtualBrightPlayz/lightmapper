@@ -78,7 +78,6 @@ float2 roundUV(float2 uv)
 {
     int2 sizeOut;
     outTex.GetDimensions(sizeOut.x, sizeOut.y);
-    // float2 halfPixel = 0.5 / sizeOut;
     return round(uv * float2(sizeOut)) / float2(sizeOut);
 }
 
@@ -102,8 +101,6 @@ float4 TraceMesh(MeshObject mesh, float2 uv1)
         float2 uvmin = min(min(v0.uv01.zw, v1.uv01.zw), v2.uv01.zw) - halfPixel;
         float minmax = distance(uvw, uvw2) + EPSILON;
         if (!(uvw.x >= -minmax && uvw.x <= 1 + minmax && uvw.y >= -minmax && uvw.y <= 1 + minmax && uvw.z >= -minmax && uvw.z <= 1 + minmax))
-        // if (uvw.x + uvw.y + uvw.z < 1 - EPSILON || uvw.x + uvw.y + uvw.z > 1 + EPSILON)
-        // if (uvw.x > 1 || uvw.x < 0 || uvw.y > 1 || uvw.y < 0 || uvw.z > 1 || uvw.z < 0)
         {
             continue;
         }
@@ -139,19 +136,19 @@ float4 TraceMesh(MeshObject mesh, float2 uv1)
                         continue;
                     float3 val = e * PointLights[k].color.rgb * atten(PointLights[k].position, wpos) * PointLights[k].color.a;
                     result2 += val;
+                    normal = (normal + normalize(PointLights[k].position.xyz - wpos)) * 0.5;
                     if (ray.energy.x <= 0.0 && ray.energy.y <= 0.0 && ray.energy.z <= 0.0)
                         break;
                 }
             }
             result += float4(result2 / 4.0, 1);
         }
-        // int2 pos1 = int2(uv1 * sizeOut);
-        // return result;
     }
     if (result.a == 0)
     {
         return float4(0);
     }
+    return float4(clamp(normal * 0.5 + 0.5, 0, 1), 1);
     return result / result.a;
 }
 
