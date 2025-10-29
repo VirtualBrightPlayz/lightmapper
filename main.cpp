@@ -221,6 +221,7 @@ void load_glb(std::vector<MeshObject>& meshes, std::vector<MeshVertex>& verts, s
             if (positions.size() != 0 && positions.size() == normals.size() && positions.size() == texcoord0.size() && positions.size() == texcoord1.size()) {
                 mesh.indices.x = (uint32_t)inds.size();
                 mesh.indices.y = (uint32_t)indsTmp.size();
+                uint32_t vertOffset = verts.size();
                 // mesh.indices.y = 6;
                 // assert(indsTmp.size() == positions.size());
                 for (size_t k = 0; k < positions.size(); k++) {
@@ -240,9 +241,9 @@ void load_glb(std::vector<MeshObject>& meshes, std::vector<MeshVertex>& verts, s
                 }
                 for (size_t k = 0; k < indsTmp.size(); k++) {
                     assert(indsTmp[k] < positions.size());
-                    assert(indsTmp[k] + mesh.indices.x < verts.size());
+                    assert(indsTmp[k] + vertOffset < verts.size());
                     // MeshVertex vert = verts[indsTmp[k] + mesh.indices.x];
-                    inds.push_back(uint4(indsTmp[k] + mesh.indices.x, 0, 0, 0));
+                    inds.push_back(uint4(indsTmp[k] + vertOffset, 0, 0, 0));
                 }
             } else {
                 SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "positions, normals, texcoord0 and texcoord1 are different sizes");
