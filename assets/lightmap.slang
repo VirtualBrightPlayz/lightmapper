@@ -74,6 +74,14 @@ RayHit Trace(Ray ray)
     return Trace(ray, float3(0), false);
 }
 
+float2 roundUV(float2 uv)
+{
+    int2 sizeOut;
+    outTex.GetDimensions(sizeOut.x, sizeOut.y);
+    // float2 halfPixel = 0.5 / sizeOut;
+    return round(uv * float2(sizeOut)) / float2(sizeOut);
+}
+
 float4 TraceMesh(MeshObject mesh, float2 uv1)
 {
     int2 sizeOut;
@@ -82,16 +90,17 @@ float4 TraceMesh(MeshObject mesh, float2 uv1)
     uint offset = uint(mesh.indices.x);
     uint count = offset + uint(mesh.indices.y);
     float3 normal = float3(0);
-    float3 result = float3(0);
+    float4 result = float4(0);
     for (uint i = offset; i < count; i += 3)
     {
         MeshVertex v0 = Vertices[uint(Indices[i].x)];
         MeshVertex v1 = Vertices[uint(Indices[i + 1].x)];
         MeshVertex v2 = Vertices[uint(Indices[i + 2].x)];
-        float3 uvw = GetBarycentric(v0.uv01.zw, v1.uv01.zw, v2.uv01.zw, uv1);
+        float3 uvw = GetBarycentric((v0.uv01.zw), (v1.uv01.zw), (v2.uv01.zw), (uv1));
+        float3 uvw2 = GetBarycentric((v0.uv01.zw), (v1.uv01.zw), (v2.uv01.zw), (uv1 + halfPixel * 2));
         float2 uvmax = max(max(v0.uv01.zw, v1.uv01.zw), v2.uv01.zw) + halfPixel;
         float2 uvmin = min(min(v0.uv01.zw, v1.uv01.zw), v2.uv01.zw) - halfPixel;
-        float minmax = EPSILON;
+        float minmax = distance(uvw, uvw2) + EPSILON;
         if (!(uvw.x >= -minmax && uvw.x <= 1 + minmax && uvw.y >= -minmax && uvw.y <= 1 + minmax && uvw.z >= -minmax && uvw.z <= 1 + minmax))
         // if (uvw.x + uvw.y + uvw.z < 1 - EPSILON || uvw.x + uvw.y + uvw.z > 1 + EPSILON)
         // if (uvw.x > 1 || uvw.x < 0 || uvw.y > 1 || uvw.y < 0 || uvw.z > 1 || uvw.z < 0)
@@ -134,12 +143,16 @@ float4 TraceMesh(MeshObject mesh, float2 uv1)
                         break;
                 }
             }
-            result += result2 / 4.0;
+            result += float4(result2 / 4.0, 1);
         }
         // int2 pos1 = int2(uv1 * sizeOut);
-        return float4(result, 1);
+        // return result;
     }
-    return float4(result, 0);
+    if (result.a == 0)
+    {
+        return float4(0);
+    }
+    return result / result.a;
 }
 
 [shader("compute")]
