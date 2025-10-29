@@ -221,7 +221,7 @@ void load_glb(std::vector<MeshObject>& meshes, std::vector<MeshVertex>& verts, s
             if (positions.size() != 0 && positions.size() == normals.size() && positions.size() == texcoord0.size() && positions.size() == texcoord1.size()) {
                 mesh.indices.x = (uint32_t)inds.size();
                 mesh.indices.y = (uint32_t)indsTmp.size();
-                uint32_t vertOffset = verts.size();
+                uint32_t vertOffset = (uint32_t)verts.size();
                 // mesh.indices.y = 6;
                 // assert(indsTmp.size() == positions.size());
                 for (size_t k = 0; k < positions.size(); k++) {
@@ -440,6 +440,7 @@ int main(int argc, char *argv[]) {
                         for (size_t j = 0; j < h; j+=calcWidth) {
                             params.offsetPixels.x = (uint32_t)i;
                             params.offsetPixels.y = (uint32_t)j;
+                            params.offsetPixels.z = 1;
                             upload_buffer(gpu, paramsBuffer, sizeof(ParamsType), &params);
                             SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(gpu);
                             if (cmdbuf == nullptr) {

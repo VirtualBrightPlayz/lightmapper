@@ -148,7 +148,10 @@ float4 TraceMesh(MeshObject mesh, float2 uv1)
     {
         return float4(0);
     }
-    return float4(clamp(normal * 0.5 + 0.5, 0, 1), 1);
+    if (Params[0].offsetPixels.z == 1)
+    {
+        return float4(clamp(normal * 0.5 + 0.5, 0, 1), 1);
+    }
     return result / result.a;
 }
 
@@ -167,8 +170,7 @@ void main(uint3 id : SV_DispatchThreadID)
         if (Meshes[i].indices.z < 1)
             continue;
         float4 result = TraceMesh(Meshes[i], uv1);
-        if (result.w > 0) {
+        if (result.w > 0)
             outTex[uv] = result;
-        }
     }
 }
