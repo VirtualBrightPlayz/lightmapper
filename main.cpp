@@ -113,12 +113,12 @@ bool upload_buffer(SDL_GPUDevice* gpu, SDL_GPUBuffer* buffer, size_t datasize, v
     return true;
 }
 
-void load_glb(std::vector<MeshObject>& meshes, std::vector<MeshVertex>& verts, std::vector<uint4>& inds, std::vector<PointLightObject>& lights) {
+void load_glb(std::string file, std::vector<MeshObject>& meshes, std::vector<MeshVertex>& verts, std::vector<uint4>& inds, std::vector<PointLightObject>& lights) {
     tinygltf::TinyGLTF loader{};
     tinygltf::Model model{};
     std::string err;
     std::string warn;
-    if (!loader.LoadBinaryFromFile(&model, &err, &warn, "assets/test1.glb")) {
+    if (!loader.LoadBinaryFromFile(&model, &err, &warn, file)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Load .glb file failed: %s", err.c_str());
         return;
     } else {
@@ -352,7 +352,11 @@ int main(int argc, char *argv[]) {
             std::vector<MeshVertex> verts{};
             std::vector<uint4> inds{};
             std::vector<PointLightObject> lights{};
-            load_glb(meshes, verts, inds, lights);
+            std::string glbPath = "assets/test1.glb";
+            if (argc > 1) {
+                glbPath = std::string(argv[1]);
+            }
+            load_glb(glbPath, meshes, verts, inds, lights);
             /*
             meshes.reserve(shapes.size());
             for (size_t i = 0; i < shapes.size(); i++) {
@@ -440,7 +444,7 @@ int main(int argc, char *argv[]) {
                         for (size_t j = 0; j < h; j+=calcWidth) {
                             params.offsetPixels.x = (uint32_t)i;
                             params.offsetPixels.y = (uint32_t)j;
-                            params.offsetPixels.z = 1;
+                            params.offsetPixels.z = 0;
                             upload_buffer(gpu, paramsBuffer, sizeof(ParamsType), &params);
                             SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(gpu);
                             if (cmdbuf == nullptr) {
