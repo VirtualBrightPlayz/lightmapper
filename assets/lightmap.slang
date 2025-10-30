@@ -212,7 +212,7 @@ bool ShadeDirectMesh(MeshObject mesh, float2 uv1, bool useRay, Ray originRay, in
                 ray.predicted_distance = d;
                 float accDist = 0;
                 // bounce this many rays minus one for the initial ray
-                for (uint j = 0; j < 1; j++)
+                for (uint j = 0; j < 3; j++)
                 {
                     RayHit hit = Trace(ray);
                     // Ray ray2 = CreateRay(targetPos, -ray.direction);
@@ -220,10 +220,14 @@ bool ShadeDirectMesh(MeshObject mesh, float2 uv1, bool useRay, Ray originRay, in
                     // float3 e = ray.energy;
                     // ray.energy = PointLights[k].color.rgb * PointLights[k].color.a * atten2(PointLights[k].position, accDist);
                     outHit = hit;
-                    if (hit.dist + EPSILON < d2)
+                    // if (hit.dist + 0.001 < d2)
+                    if (hit.dist + 0.001 < d2)
                     // if (abs(hit.dist - hit2.dist) <= EPSILON && j != 0)
                     {
-                        break;
+                        // break;
+                        // accDist += hit.dist;
+                        float attn = atten2(PointLights[k].position, accDist);
+                        // ray.energy *= attn;
                     }
                     else
                     {
@@ -237,14 +241,15 @@ bool ShadeDirectMesh(MeshObject mesh, float2 uv1, bool useRay, Ray originRay, in
                         // float3 tanNormal = mul(GetTangentSpace(wnorm, tangent), worldNormal);
                         // float3 tanNormal = hit.normal;
                         float3 tanNormal = worldNormal;
-                        normal = (normal + float4(tanNormal, attn)) / 2.0;
+                        normal = (normal + float4(tanNormal * attn, attn)) / 2.0;
                     }
 
                     if (ray.energy.x <= 0.0 && ray.energy.y <= 0.0 && ray.energy.z <= 0.0)
                         break;
                     ray.origin = hit.position + hit.normal * 0.001;
-                    ray.direction = reflect(ray.direction, hit.normal);
-                    // ray.direction = SampleHemisphere(reflect(ray.direction, hit.normal), 15.0);
+                    // ray.direction = reflect(ray.direction, hit.normal);
+                    ray.direction = SampleHemisphere(reflect(ray.direction, hit.normal), 1.0);
+                    continue;
                     RayHit hit2 = Trace(ray);
                     if (hit2.dist == float.maxValue)
                     {
@@ -283,7 +288,9 @@ float4 TraceMesh(MeshObject mesh, float2 uv1)
     if (ShadeDirectMesh(mesh, uv1, false, raycast, color, lightDir, hitOut))
     {
         if (Params[0].offsetPixels.z == 1)
+        {
             return ((lightDir) * 0.5) + 0.5;
+        }
         return color;
     }
     return float4(0);
