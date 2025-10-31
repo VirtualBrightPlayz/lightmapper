@@ -7,3 +7,6 @@
 [submodule "volk"]
 	path = volk
 	url = git@github.com:zeux/volk.git
+[submodule "imgui"]
+	path = imgui
+	url = git@github.com:ocornut/imgui.git
