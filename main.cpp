@@ -430,7 +430,7 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
 
             SDL_GPUTextureCreateInfo textureCreateInfo{};
             textureCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
-            textureCreateInfo.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+            textureCreateInfo.format = SDL_GPU_TEXTUREFORMAT_R32G32B32A32_FLOAT;
             textureCreateInfo.usage = SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE;
             textureCreateInfo.width = w;
             textureCreateInfo.height = h;
@@ -441,9 +441,20 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
                 SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPU texture creation failed: %s", SDL_GetError());
                 result = false;
             } else {
+
+                // SDL_GPUTextureCreateInfo textureCreateInfo{};
+                // textureCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
+                // textureCreateInfo.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+                // textureCreateInfo.usage = SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE;
+                // textureCreateInfo.width = w;
+                // textureCreateInfo.height = h;
+                // textureCreateInfo.layer_count_or_depth = 1;
+                // textureCreateInfo.num_levels = 1;
+                // SDL_GPUTexture* outputTexture = SDL_CreateGPUTexture(gpu, &textureCreateInfo);
+
                 SDL_GPUTransferBufferCreateInfo transferCreateInfo{};
                 transferCreateInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;
-                transferCreateInfo.size = w * h * 4;
+                transferCreateInfo.size = w * h * 4 * sizeof(float);
                 SDL_GPUTransferBuffer* transferBuffer = SDL_CreateGPUTransferBuffer(gpu, &transferCreateInfo);
                 if (transferBuffer == nullptr) {
                     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPU transfer buffer creation failed: %s", SDL_GetError());
@@ -515,6 +526,11 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
                         } else {
                             // copy pass
                             SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(cmdbuf);
+                            // SDL_GPUTextureLocation srcLocation{};
+                            // srcLocation.texture = texture;
+                            // SDL_GPUTextureLocation dstLocation{};
+                            // dstLocation.texture = outputTexture;
+                            // SDL_CopyGPUTextureToTexture(copyPass, &srcLocation, &dstLocation, w, h, 1, true);
                             SDL_GPUTextureRegion sourceRegion{};
                             sourceRegion.texture = texture;
                             sourceRegion.w = w;
@@ -531,23 +547,31 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
                                 SDL_WaitForGPUFences(gpu, true, &fence, 1);
                                 SDL_ReleaseGPUFence(gpu, fence);
                                 void* rawBufferData = SDL_MapGPUTransferBuffer(gpu, transferBuffer, true);
+                                float* rgba32 = (float*)rawBufferData;
+                                uint8_t* rgba8 = (uint8_t*)malloc(w * h * 4);
+                                for (size_t l = 0; l < w * h * 4; l++) {
+                                    float val = rgba32[l];
+                                    // assert(val <= 1.0f);
+                                    rgba8[l] = (uint8_t)(SDL_clamp(val, 0.0f, 1.0f) * 255.0f);
+                                }
                                 stbi_flip_vertically_on_write(0);
                                 if (k == 0)
                                 {
                                     if (data != nullptr)
-                                        memcpy(data->colorData, rawBufferData, w * h * 4);
-                                    stbi_write_png("color.png", w, h, 4, rawBufferData, w * 4);
+                                        memcpy(data->colorData, rgba8, w * h * 4);
+                                    stbi_write_png("color.png", w, h, 4, rgba8, w * 4);
                                 }
                                 else if (k == 1)
                                 {
                                     if (data != nullptr)
-                                        memcpy(data->dirData, rawBufferData, w * h * 4);
-                                    stbi_write_png("dir.png", w, h, 4, rawBufferData, w * 4);
+                                        memcpy(data->dirData, rgba8, w * h * 4);
+                                    stbi_write_png("dir.png", w, h, 4, rgba8, w * 4);
                                 }
                                 else
                                 {
-                                    stbi_write_png("output.png", w, h, 4, rawBufferData, w * 4);
+                                    stbi_write_png("output.png", w, h, 4, rgba8, w * 4);
                                 }
+                                free(rgba8);
                                 SDL_UnmapGPUTransferBuffer(gpu, transferBuffer);
                             }
                         }
@@ -783,7 +807,8 @@ int main(int argc, char *argv[]) {
     if (argc > 1) {
         bake_lightmaps(nullptr, gpu, nullptr, argv[1], 1024);
     } else {
-        gui_main(gpu);
+        bake_lightmaps(nullptr, gpu, nullptr, "assets/test1.glb", 1024);
+        // gui_main(gpu);
     }
 
     SDL_DestroyGPUDevice(gpu);
