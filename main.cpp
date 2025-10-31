@@ -594,6 +594,48 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
     return result;
 }
 
+std::vector<SDL_Vertex> get_SDL_verts(const AABB aabb, const std::vector<MeshVertex>& verts, const std::vector<uint4>& inds) {
+    std::vector<SDL_Vertex> sdl_verts{};
+    float3 minpos = float3(aabb.min_pos.x, aabb.min_pos.y, aabb.min_pos.z);
+    float3 maxpos = float3(aabb.max_pos.x, aabb.max_pos.y, aabb.max_pos.z);
+    for (size_t i = 0; i < inds.size(); i++) {
+        float4 pos2 = verts[inds[i].x].position;
+        float4x4 view = glm::lookAt(maxpos * 1.5f, float3(0, 0, 0), float3(0, 0, 1));
+        float orthoSize = 1.0f / 100.0f;
+        float4x4 proj = glm::ortho(0.0f, orthoSize, 0.0f, orthoSize, 0.1f, 1000.0f);
+        float4 pos = float4(pos2.x, pos2.y, pos2.z, 1.0f);
+        pos = proj * view * pos;
+        SDL_Vertex vert{};
+        vert.position.x = pos.x + 512.0f;
+        vert.position.y = pos.y + 512.0f;
+        vert.color.r = 1;
+        vert.color.g = 1;
+        vert.color.b = 1;
+        vert.color.a = 1;
+        vert.tex_coord.x = verts[inds[i].x].uv01.z;
+        vert.tex_coord.y = verts[inds[i].x].uv01.w;
+        sdl_verts.push_back(vert);
+    }
+    return sdl_verts;
+}
+
+void render_preview(SDL_Renderer* renderer, SDL_Texture* texture, SDL_Texture* color, const std::string path) {
+    std::vector<MeshObject> meshes{};
+    std::vector<MeshVertex> verts{};
+    std::vector<uint4> inds{};
+    std::vector<PointLightObject> lights{};
+    load_glb(path, meshes, verts, inds, lights);
+    if (meshes.size() == 0) {
+        return;
+    }
+    std::vector<SDL_Vertex> sdl_verts = get_SDL_verts(meshes[0].aabb, verts, inds);
+    SDL_SetRenderTarget(renderer, texture);
+    SDL_SetRenderDrawColor(renderer, 64, 64, 64, 255);
+    SDL_RenderClear(renderer);
+    SDL_RenderGeometry(renderer, color, sdl_verts.data(), (int)sdl_verts.size(), nullptr, 0);
+    SDL_SetRenderTarget(renderer, nullptr);
+}
+
 void file_select(void* userdata, const char* const* filelist, int filter) {
     std::string* path = (std::string*)userdata;
     if (filelist == nullptr || filelist[0] == nullptr) {
@@ -647,6 +689,8 @@ bool gui_main(SDL_GPUDevice* gpu) {
     SDL_Texture* dirTex = nullptr;
     int32_t dirTexWidth = 0;
 
+    SDL_Texture* previewTex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_TARGET, 1024, 1024);
+
     bool done = false;
     while (!done) {
         SDL_Event event;
@@ -693,6 +737,9 @@ bool gui_main(SDL_GPUDevice* gpu) {
                             // TODO: handle error
                         }
                     }
+                    if (ImGui::MenuItem("Preview")) {
+                        render_preview(renderer, previewTex, colorTex, filepath);
+                    }
                     ImGui::EndMenu();
                 }
                 ImGui::EndMainMenuBar();
@@ -710,6 +757,7 @@ bool gui_main(SDL_GPUDevice* gpu) {
                 }
                 ImGui::Image(dirTex, ImVec2(128.0f, 128.0f));
             }
+            ImGui::Image(previewTex, ImVec2(512.0f, 512.0f));
             for (size_t i = 0; i < logged_data.size(); i++) {
                 std::string logLine = logged_data.at(i);
                 ImGui::TextUnformatted(logLine.c_str());
@@ -759,6 +807,7 @@ bool gui_main(SDL_GPUDevice* gpu) {
                         }
                         SDL_DestroySurface(surface);
                     }
+                    render_preview(renderer, previewTex, colorTex, filepath);
                 }
                 ImGui::EndPopup();
             }
@@ -769,6 +818,12 @@ bool gui_main(SDL_GPUDevice* gpu) {
         ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer);
         SDL_RenderPresent(renderer);
     }
+
+    if (colorTex != nullptr)
+        SDL_DestroyTexture(colorTex);
+    if (dirTex != nullptr)
+        SDL_DestroyTexture(dirTex);
+    SDL_DestroyTexture(previewTex);
 
     ImGui_ImplSDLRenderer3_Shutdown();
     ImGui_ImplSDL3_Shutdown();
@@ -807,8 +862,8 @@ int main(int argc, char *argv[]) {
     if (argc > 1) {
         bake_lightmaps(nullptr, gpu, nullptr, argv[1], 1024);
     } else {
-        bake_lightmaps(nullptr, gpu, nullptr, "assets/test1.glb", 1024);
-        // gui_main(gpu);
+        // bake_lightmaps(nullptr, gpu, nullptr, "assets/test1.glb", 1024);
+        gui_main(gpu);
     }
 
     SDL_DestroyGPUDevice(gpu);
