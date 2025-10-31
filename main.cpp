@@ -29,6 +29,24 @@
 #include <SDL3/SDL_time.h>
 #include <SDL3/SDL_messagebox.h>
 #include <SDL3/SDL_dialog.h>
+#include <SDL3/SDL_thread.h>
+#include <SDL3/SDL_mutex.h>
+
+
+struct BakedLightmapData {
+    uint32_t width;
+    void* colorData;
+    void* dirData;
+};
+
+struct BakeThreadConfig {
+    SDL_GPUDevice* gpu;
+    std::string filePath;
+    uint16_t textureSize;
+    BakedLightmapData output;
+};
+
+bool should_cancel_bake = false;
 
 std::time_t last_progress_time = (std::time_t)0;
 int32_t last_progress_value = -1;
@@ -43,17 +61,12 @@ void progress_reset() {
 
 void report_progress(const int32_t progress) {
     std::time_t cur = std::time(nullptr);
+    last_progress_value = progress;
     if (cur > last_progress_time) {
-        last_progress_value = progress;
         std::cout << (char)27 << "]9;4;1;" << progress << (char)7;
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "[%i%%]", progress);
         last_progress_time = cur;
     }
-}
-
-void read_config() {
-    // TODO
-    return;
 }
 
 uint8_t* malloc_file(const std::string path, size_t* filesize) {
@@ -345,14 +358,24 @@ void load_glb(std::string file, std::vector<MeshObject>& meshes, std::vector<Mes
     }
 }
 
-bool bake_lightmaps(SDL_GPUDevice* gpu, const std::string glbPath, const uint16_t texSize, const uint32_t seed = 0) {
+bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldCancelFunc)(), const std::string glbPath, const uint16_t texSize, const uint32_t seed = 0) {
     progress_reset();
     const uint16_t w = texSize;
     const uint16_t h = w;
     const uint16_t calcWidth = 128;
 
     bool result = true;
-    
+    if (data != nullptr) {
+        if (data->colorData != nullptr) {
+            free(data->colorData);
+            data->colorData = nullptr;
+        }
+        if (data->dirData != nullptr) {
+            free(data->dirData);
+            data->dirData = nullptr;
+        }
+    }
+
     std::vector<MeshObject> meshes{};
     std::vector<MeshVertex> verts{};
     std::vector<uint4> inds{};
@@ -426,6 +449,11 @@ bool bake_lightmaps(SDL_GPUDevice* gpu, const std::string glbPath, const uint16_
                     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPU transfer buffer creation failed: %s", SDL_GetError());
                     result = false;
                 } else {
+                    if (data != nullptr) {
+                        data->colorData = malloc(w * h * 4);
+                        data->dirData = malloc(w * h * 4);
+                        data->width = w;
+                    }
                     size_t wCalc = w / calcWidth;
                     size_t hCalc = h / calcWidth;
                     size_t count = w * h * 2;
@@ -452,6 +480,7 @@ bool bake_lightmaps(SDL_GPUDevice* gpu, const std::string glbPath, const uint16_
                                     SDL_BindGPUComputePipeline(computePass, pipeline);
                                     SDL_DispatchGPUCompute(computePass, calcWidth / 8, calcWidth / 8, 1);
                                     SDL_EndGPUComputePass(computePass);
+                                    /*
                                     // copy pass
                                     SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(cmdbuf);
                                     SDL_GPUTextureRegion sourceRegion{};
@@ -463,6 +492,7 @@ bool bake_lightmaps(SDL_GPUDevice* gpu, const std::string glbPath, const uint16_
                                     destInfo.transfer_buffer = transferBuffer;
                                     SDL_DownloadFromGPUTexture(copyPass, &sourceRegion, &destInfo);
                                     SDL_EndGPUCopyPass(copyPass);
+                                    */
                                     SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdbuf);
                                     if (fence == nullptr) {
                                         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPU command buffer submission failed: %s", SDL_GetError());
@@ -470,25 +500,57 @@ bool bake_lightmaps(SDL_GPUDevice* gpu, const std::string glbPath, const uint16_
                                     } else {
                                         SDL_WaitForGPUFences(gpu, true, &fence, 1);
                                         SDL_ReleaseGPUFence(gpu, fence);
+                                        if (shouldCancelFunc != nullptr && shouldCancelFunc()) {
+                                            // k = 2;
+                                            i = w;
+                                            j = h;
+                                        }
                                     }
                                 }
                             }
                         }
-                        void* rawBufferData = SDL_MapGPUTransferBuffer(gpu, transferBuffer, true);
-                        stbi_flip_vertically_on_write(0);
-                        if (k == 0)
-                        {
-                            stbi_write_png("color.png", w, h, 4, rawBufferData, w * 4);
+                        SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(gpu);
+                        if (cmdbuf == nullptr) {
+                            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPU command buffer acquisition failed: %s", SDL_GetError());
+                        } else {
+                            // copy pass
+                            SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(cmdbuf);
+                            SDL_GPUTextureRegion sourceRegion{};
+                            sourceRegion.texture = texture;
+                            sourceRegion.w = w;
+                            sourceRegion.h = h;
+                            sourceRegion.d = 1;
+                            SDL_GPUTextureTransferInfo destInfo{};
+                            destInfo.transfer_buffer = transferBuffer;
+                            SDL_DownloadFromGPUTexture(copyPass, &sourceRegion, &destInfo);
+                            SDL_EndGPUCopyPass(copyPass);
+                            SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdbuf);
+                            if (fence == nullptr) {
+                                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPU command buffer submission failed: %s", SDL_GetError());
+                            } else {
+                                SDL_WaitForGPUFences(gpu, true, &fence, 1);
+                                SDL_ReleaseGPUFence(gpu, fence);
+                                void* rawBufferData = SDL_MapGPUTransferBuffer(gpu, transferBuffer, true);
+                                stbi_flip_vertically_on_write(0);
+                                if (k == 0)
+                                {
+                                    if (data != nullptr)
+                                        memcpy(data->colorData, rawBufferData, w * h * 4);
+                                    stbi_write_png("color.png", w, h, 4, rawBufferData, w * 4);
+                                }
+                                else if (k == 1)
+                                {
+                                    if (data != nullptr)
+                                        memcpy(data->dirData, rawBufferData, w * h * 4);
+                                    stbi_write_png("dir.png", w, h, 4, rawBufferData, w * 4);
+                                }
+                                else
+                                {
+                                    stbi_write_png("output.png", w, h, 4, rawBufferData, w * 4);
+                                }
+                                SDL_UnmapGPUTransferBuffer(gpu, transferBuffer);
+                            }
                         }
-                        else if (k == 1)
-                        {
-                            stbi_write_png("dir.png", w, h, 4, rawBufferData, w * 4);
-                        }
-                        else
-                        {
-                            stbi_write_png("output.png", w, h, 4, rawBufferData, w * 4);
-                        }
-                        SDL_UnmapGPUTransferBuffer(gpu, transferBuffer);
                     }
                     SDL_ReleaseGPUTransferBuffer(gpu, transferBuffer);
                 }
@@ -509,11 +571,25 @@ bool bake_lightmaps(SDL_GPUDevice* gpu, const std::string glbPath, const uint16_
 }
 
 void file_select(void* userdata, const char* const* filelist, int filter) {
-    SDL_GPUDevice* gpu = (SDL_GPUDevice*)userdata;
+    std::string* path = (std::string*)userdata;
     if (filelist == nullptr || filelist[0] == nullptr) {
+        *path = "";
         return;
     }
-    bake_lightmaps(gpu, filelist[0], 1024);
+    *path = std::string(filelist[0]);
+}
+
+bool bake_thread_should_stop() {
+    return should_cancel_bake;
+}
+
+int bake_thread(void* userdata) {
+    BakeThreadConfig* config = (BakeThreadConfig*)userdata;
+    if (bake_lightmaps(&config->output, config->gpu, bake_thread_should_stop, config->filePath, config->textureSize)) {
+        return EXIT_SUCCESS;
+    } else {
+        return EXIT_FAILURE;
+    }
 }
 
 bool gui_main(SDL_GPUDevice* gpu) {
@@ -538,6 +614,14 @@ bool gui_main(SDL_GPUDevice* gpu) {
 
     ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
     ImGui_ImplSDLRenderer3_Init(renderer);
+
+    std::string filepath = "";
+    BakeThreadConfig config = {};
+    SDL_Thread* thread = nullptr;
+    SDL_Texture* colorTex = nullptr;
+    int32_t colorTexWidth = 0;
+    SDL_Texture* dirTex = nullptr;
+    int32_t dirTexWidth = 0;
 
     bool done = false;
     while (!done) {
@@ -567,7 +651,23 @@ bool gui_main(SDL_GPUDevice* gpu) {
             if (ImGui::BeginMainMenuBar()) {
                 if (ImGui::BeginMenu("Menu")) {
                     if (ImGui::MenuItem("Open File")) {
-                        SDL_ShowOpenFileDialog(file_select, gpu, window, &(SDL_DialogFileFilter{"glTF 2.0", "glb;gltf"}), 1, nullptr, false);
+                        SDL_DialogFileFilter filter{"glTF 2.0", "glb;gltf"};
+                        SDL_ShowOpenFileDialog(file_select, &filepath, window, &filter, 1, nullptr, false);
+                    }
+                    if (ImGui::MenuItem("Bake")) {
+                        should_cancel_bake = true;
+                        if (thread != nullptr) {
+                            SDL_WaitThread(thread, nullptr);
+                            thread = nullptr;
+                        }
+                        should_cancel_bake = false;
+                        config.gpu = gpu;
+                        config.filePath = filepath;
+                        config.textureSize = 1024;
+                        thread = SDL_CreateThread(bake_thread, "Lightmap Bake Thread", &config);
+                        if (thread == nullptr) {
+                            // TODO: handle error
+                        }
                     }
                     ImGui::EndMenu();
                 }
@@ -577,6 +677,15 @@ bool gui_main(SDL_GPUDevice* gpu) {
             ImGui::SetNextWindowPos(vp->WorkPos);
             ImGui::SetNextWindowSize(vp->WorkSize);
             ImGui::Begin("Logs", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+            if (colorTex != nullptr) {
+                ImGui::Image(colorTex, ImVec2(128.0f, 128.0f));
+            }
+            if (dirTex != nullptr) {
+                if (colorTex != nullptr) {
+                    ImGui::SameLine();
+                }
+                ImGui::Image(dirTex, ImVec2(128.0f, 128.0f));
+            }
             for (size_t i = 0; i < logged_data.size(); i++) {
                 std::string logLine = logged_data.at(i);
                 ImGui::TextUnformatted(logLine.c_str());
@@ -592,8 +701,40 @@ bool gui_main(SDL_GPUDevice* gpu) {
             if (ImGui::BeginPopupModal("Progress", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
                 ImGui::Text("Please wait...");
                 ImGui::ProgressBar(last_progress_value / 100.0f);
-                if (last_progress_value == -1) {
+                if (last_progress_value == -1 || ImGui::Button("Cancel")) {
+                    should_cancel_bake = true;
+                    if (thread != nullptr) {
+                        SDL_WaitThread(thread, nullptr);
+                        thread = nullptr;
+                    }
                     ImGui::CloseCurrentPopup();
+                    // bake finished, update images
+                    if (config.output.colorData != nullptr) {
+                        SDL_Surface* surface = SDL_CreateSurfaceFrom(config.output.width, config.output.width, SDL_PIXELFORMAT_RGBA32, config.output.colorData, config.output.width * 4);
+                        if (colorTex != nullptr)
+                            SDL_DestroyTexture(colorTex);
+                        colorTexWidth = 0;
+                        colorTex = SDL_CreateTextureFromSurface(renderer, surface);
+                        if (colorTex == nullptr) {
+                            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Texture creation from surface failed: %s", SDL_GetError());
+                        } else {
+                            colorTexWidth = config.output.width;
+                        }
+                        SDL_DestroySurface(surface);
+                    }
+                    if (config.output.dirData != nullptr) {
+                        SDL_Surface* surface = SDL_CreateSurfaceFrom(config.output.width, config.output.width, SDL_PIXELFORMAT_RGBA32, config.output.dirData, config.output.width * 4);
+                        if (dirTex != nullptr)
+                            SDL_DestroyTexture(dirTex);
+                        dirTexWidth = 0;
+                        dirTex = SDL_CreateTextureFromSurface(renderer, surface);
+                        if (dirTex == nullptr) {
+                            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Texture creation from surface failed: %s", SDL_GetError());
+                        } else {
+                            dirTexWidth = config.output.width;
+                        }
+                        SDL_DestroySurface(surface);
+                    }
                 }
                 ImGui::EndPopup();
             }
@@ -640,7 +781,7 @@ int main(int argc, char *argv[]) {
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Selected GPU API: %s", SDL_GetGPUDeviceDriver(gpu));
 
     if (argc > 1) {
-        bake_lightmaps(gpu, argv[1], 1024);
+        bake_lightmaps(nullptr, gpu, nullptr, argv[1], 1024);
     } else {
         gui_main(gpu);
     }
