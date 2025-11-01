@@ -17,8 +17,9 @@
 #include "stb_image_write.h"
 
 #include "imgui.h"
+#include "implot3d.h"
 #include "imgui_impl_sdl3.h"
-#include "imgui_impl_sdlrenderer3.h"
+#include "imgui_impl_sdlgpu3.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_init.h>
@@ -103,9 +104,9 @@ SDL_GPUComputePipeline* create_pipeline(SDL_GPUDevice* gpu, size_t filesize, uin
     return pipeline;
 }
 
-bool create_buffer(SDL_GPUDevice* gpu, size_t datasize, SDL_GPUBuffer** bufferOut) {
+bool create_buffer(SDL_GPUDevice* gpu, size_t datasize, SDL_GPUBufferUsageFlags usage, SDL_GPUBuffer** bufferOut) {
     SDL_GPUBufferCreateInfo bufferCreateInfo{};
-    bufferCreateInfo.usage = SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ;
+    bufferCreateInfo.usage = usage;
     bufferCreateInfo.size = (uint32_t)datasize;
     SDL_GPUBuffer* buffer = SDL_CreateGPUBuffer(gpu, &bufferCreateInfo);
     if (buffer == nullptr) {
@@ -118,7 +119,7 @@ bool create_buffer(SDL_GPUDevice* gpu, size_t datasize, SDL_GPUBuffer** bufferOu
 
 bool upload_buffer(SDL_GPUDevice* gpu, SDL_GPUBuffer* buffer, size_t datasize, void* data) {
     SDL_GPUTransferBufferCreateInfo transferCreateInfo{};
-    transferCreateInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;
+    transferCreateInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
     transferCreateInfo.size = (uint32_t)datasize;
     SDL_GPUTransferBuffer* transferBuffer = SDL_CreateGPUTransferBuffer(gpu, &transferCreateInfo);
     if (transferBuffer == nullptr) {
@@ -413,19 +414,19 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
             SDL_GPUBuffer* indsBuffer = nullptr;
             SDL_GPUBuffer* lightsBuffer = nullptr;
 
-            create_buffer(gpu, sizeof(ParamsType), &paramsBuffer);
+            create_buffer(gpu, sizeof(ParamsType), SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ, &paramsBuffer);
             upload_buffer(gpu, paramsBuffer, sizeof(ParamsType), &params);
 
-            create_buffer(gpu, sizeof(MeshObject) * meshes.size(), &meshesBuffer);
+            create_buffer(gpu, sizeof(MeshObject) * meshes.size(), SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ, &meshesBuffer);
             upload_buffer(gpu, meshesBuffer, sizeof(MeshObject) * meshes.size(), meshes.data());
 
-            create_buffer(gpu, sizeof(MeshVertex) * verts.size(), &vertsBuffer);
+            create_buffer(gpu, sizeof(MeshVertex) * verts.size(), SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ, &vertsBuffer);
             upload_buffer(gpu, vertsBuffer, sizeof(MeshVertex) * verts.size(), verts.data());
 
-            create_buffer(gpu, sizeof(uint4) * inds.size(), &indsBuffer);
+            create_buffer(gpu, sizeof(uint4) * inds.size(), SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ, &indsBuffer);
             upload_buffer(gpu, indsBuffer, sizeof(uint4) * inds.size(), inds.data());
 
-            create_buffer(gpu, sizeof(PointLightObject) * lights.size(), &lightsBuffer);
+            create_buffer(gpu, sizeof(PointLightObject) * lights.size(), SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ, &lightsBuffer);
             upload_buffer(gpu, lightsBuffer, sizeof(PointLightObject) * lights.size(), lights.data());
 
             SDL_GPUTextureCreateInfo textureCreateInfo{};
@@ -619,7 +620,24 @@ std::vector<SDL_Vertex> get_SDL_verts(const AABB aabb, const std::vector<MeshVer
     return sdl_verts;
 }
 
-void render_preview(SDL_Renderer* renderer, SDL_Texture* texture, SDL_Texture* color, const std::string path) {
+std::vector<ImPlot3DPoint> get_ImPlot3D_verts(const AABB aabb, const std::vector<MeshVertex>& verts, const std::vector<uint4>& inds) {
+    std::vector<ImPlot3DPoint> sdl_verts{};
+    float3 minpos = float3(aabb.min_pos.x, aabb.min_pos.y, aabb.min_pos.z);
+    float3 maxpos = float3(aabb.max_pos.x, aabb.max_pos.y, aabb.max_pos.z);
+    for (size_t i = 0; i < verts.size(); i++) {
+        float4 pos2 = verts[i].position;
+        float4x4 view = glm::lookAt(maxpos * 1.5f, float3(0, 0, 0), float3(0, 0, 1));
+        float orthoSize = 1.0f / 100.0f;
+        float4x4 proj = glm::ortho(0.0f, orthoSize, 0.0f, orthoSize, 0.1f, 1000.0f);
+        float4 pos = float4(pos2.x, pos2.y, pos2.z, 1.0f);
+        // pos = proj * view * pos;
+        ImPlot3DPoint vert = ImPlot3DPoint(pos.x, pos.y, pos.z);
+        sdl_verts.push_back(vert);
+    }
+    return sdl_verts;
+}
+
+void render_preview(SDL_GPUDevice* gpu, SDL_GPUTexture* outputTexture, const std::string path) {
     std::vector<MeshObject> meshes{};
     std::vector<MeshVertex> verts{};
     std::vector<uint4> inds{};
@@ -628,12 +646,50 @@ void render_preview(SDL_Renderer* renderer, SDL_Texture* texture, SDL_Texture* c
     if (meshes.size() == 0) {
         return;
     }
+    std::vector<uint16_t> indexes{};
+    for (size_t i = 0; i < inds.size(); i++) {
+        indexes.push_back((uint16_t)inds[i].x);
+    }
+
+    SDL_GPUBuffer* vertexBuffer;
+    create_buffer(gpu, verts.size() * sizeof(MeshVertex), SDL_GPU_BUFFERUSAGE_VERTEX, &vertexBuffer);
+    upload_buffer(gpu, vertexBuffer, verts.size() * sizeof(MeshVertex), verts.data());
+
+    SDL_GPUBuffer* indexBuffer;
+    create_buffer(gpu, indexes.size() * sizeof(uint16_t), SDL_GPU_BUFFERUSAGE_INDEX, &indexBuffer);
+    upload_buffer(gpu, indexBuffer, indexes.size() * sizeof(uint16_t), indexes.data());
+
+    SDL_GPUGraphicsPipelineCreateInfo createInfo{};
+    // createInfo.vertex_shader = vertShader;
+    // createInfo.fragment_shader = fragShader;
+    // SDL_GPUGraphicsPipeline* pipeline = SDL_CreateGPUGraphicsPipeline(gpu, createInfo);
+
+    SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(gpu);
+
+    SDL_GPUColorTargetInfo colorInfo{};
+    colorInfo.texture = outputTexture;
+    colorInfo.load_op = SDL_GPU_LOADOP_CLEAR;
+    colorInfo.store_op = SDL_GPU_STOREOP_STORE;
+    SDL_GPURenderPass* renderPass = SDL_BeginGPURenderPass(cmdbuf, &colorInfo, 1, nullptr);
+
+    // SDL_BindGPUGraphicsPipeline(renderPass, pipeline);
+
+    SDL_EndGPURenderPass(renderPass);
+
+    SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdbuf);
+    SDL_WaitForGPUFences(gpu, true, &fence, 1);
+
+    SDL_ReleaseGPUBuffer(gpu, vertexBuffer);
+    SDL_ReleaseGPUBuffer(gpu, indexBuffer);
+
+    /*
     std::vector<SDL_Vertex> sdl_verts = get_SDL_verts(meshes[0].aabb, verts, inds);
     SDL_SetRenderTarget(renderer, texture);
     SDL_SetRenderDrawColor(renderer, 64, 64, 64, 255);
     SDL_RenderClear(renderer);
     SDL_RenderGeometry(renderer, color, sdl_verts.data(), (int)sdl_verts.size(), nullptr, 0);
     SDL_SetRenderTarget(renderer, nullptr);
+    */
 }
 
 void file_select(void* userdata, const char* const* filelist, int filter) {
@@ -658,28 +714,43 @@ int bake_thread(void* userdata) {
     }
 }
 
+SDL_GPUTextureCreateInfo create_texture_info(uint32_t w, uint32_t h) {
+    SDL_GPUTextureCreateInfo info{};
+    info.type = SDL_GPU_TEXTURETYPE_2D;
+    info.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    info.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    info.width = w;
+    info.height = h;
+    info.layer_count_or_depth = 1;
+    info.num_levels = 1;
+    return info;
+}
+
 bool gui_main(SDL_GPUDevice* gpu) {
-    SDL_Window* window;
-    SDL_Renderer* renderer;
     SDL_WindowFlags windowFlags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN;
-    if (!SDL_CreateWindowAndRenderer("Lightmap Tool", 1200, 800, windowFlags, &window, &renderer)) {
+    SDL_Window* window = SDL_CreateWindow("Lightmap Tool", 1200, 800, windowFlags);
+    if (window == nullptr) {
         SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION, "Window creation failed: %s", SDL_GetError());
         return false;
     }
+    SDL_ClaimWindowForGPUDevice(gpu, window);
     SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
     SDL_ShowWindow(window);
-
-    SDL_SetRenderVSync(renderer, 1);
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    ImPlot3D::CreateContext();
 
     ImGui::StyleColorsDark();
+    ImPlot3D::StyleColorsDark();
 
-    ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
-    ImGui_ImplSDLRenderer3_Init(renderer);
+    ImGui_ImplSDL3_InitForSDLGPU(window);
+    ImGui_ImplSDLGPU3_InitInfo initInfo{};
+    initInfo.Device = gpu;
+    initInfo.ColorTargetFormat = SDL_GetGPUSwapchainTextureFormat(gpu, window);
+    ImGui_ImplSDLGPU3_Init(&initInfo);
 
     std::string filepath = "";
     BakeThreadConfig config = {};
@@ -689,7 +760,14 @@ bool gui_main(SDL_GPUDevice* gpu) {
     SDL_Texture* dirTex = nullptr;
     int32_t dirTexWidth = 0;
 
-    SDL_Texture* previewTex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_TARGET, 1024, 1024);
+    std::vector<MeshObject> meshes{};
+    std::vector<MeshVertex> verts{};
+    std::vector<uint4> inds{};
+    std::vector<PointLightObject> lights{};
+    std::vector<ImPlot3DPoint> points{};
+    std::vector<unsigned int> plotInds{};
+    AABB aabb{};
+    SDL_GPUTexture* previewTex = SDL_CreateGPUTexture(gpu, &create_texture_info(1024, 1024));
 
     bool done = false;
     while (!done) {
@@ -709,7 +787,7 @@ bool gui_main(SDL_GPUDevice* gpu) {
             SDL_SetWindowProgressValue(window, last_progress_value / 100.0f);
         }
 
-        ImGui_ImplSDLRenderer3_NewFrame();
+        ImGui_ImplSDLGPU3_NewFrame();
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
 
@@ -738,7 +816,23 @@ bool gui_main(SDL_GPUDevice* gpu) {
                         }
                     }
                     if (ImGui::MenuItem("Preview")) {
-                        render_preview(renderer, previewTex, colorTex, filepath);
+                        meshes.clear();
+                        verts.clear();
+                        inds.clear();
+                        lights.clear();
+                        points.clear();
+                        plotInds.clear();
+                        load_glb(filepath, meshes, verts, inds, lights);
+                        aabb = {};
+                        for (size_t i = 0; i < meshes.size(); i++) {
+                            aabb.min_pos = glm::min(aabb.min_pos, meshes[i].aabb.min_pos);
+                            aabb.max_pos = glm::max(aabb.max_pos, meshes[i].aabb.max_pos);
+                        }
+                        points = get_ImPlot3D_verts(aabb, verts, inds);
+                        for (size_t i = 0; i < inds.size(); i++) {
+                            plotInds.push_back(inds[i].x);
+                        }
+                        render_preview(gpu, previewTex, filepath);
                     }
                     ImGui::EndMenu();
                 }
@@ -749,14 +843,23 @@ bool gui_main(SDL_GPUDevice* gpu) {
             ImGui::SetNextWindowSize(vp->WorkSize);
             ImGui::Begin("Logs", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
             if (colorTex != nullptr) {
-                ImGui::Image(colorTex, ImVec2(128.0f, 128.0f));
+                // ImGui::Image(colorTex, ImVec2(128.0f, 128.0f));
             }
             if (dirTex != nullptr) {
                 if (colorTex != nullptr) {
-                    ImGui::SameLine();
+                    // ImGui::SameLine();
                 }
-                ImGui::Image(dirTex, ImVec2(128.0f, 128.0f));
+                // ImGui::Image(dirTex, ImVec2(128.0f, 128.0f));
             }
+
+            if (ImPlot3D::BeginPlot("Preview")) {
+                ImPlot3DAxisFlags flags = ImPlot3DAxisFlags_Lock | ImPlot3DAxisFlags_AutoFit;
+                ImPlot3D::SetupAxes("X", "Y", "Z", flags, flags, flags);
+                ImPlot3D::SetupAxesLimits(aabb.min_pos.x - 1, aabb.max_pos.x + 1, aabb.min_pos.y - 1, aabb.max_pos.y + 1, aabb.min_pos.z - 1, aabb.max_pos.z + 1, ImPlot3DCond_Always);
+                ImPlot3D::PlotMesh("Model", points.data(), plotInds.data(), (int)points.size(), (int)plotInds.size());
+                ImPlot3D::EndPlot();
+            }
+
             ImGui::Image(previewTex, ImVec2(512.0f, 512.0f));
             for (size_t i = 0; i < logged_data.size(); i++) {
                 std::string logLine = logged_data.at(i);
@@ -781,6 +884,7 @@ bool gui_main(SDL_GPUDevice* gpu) {
                     }
                     ImGui::CloseCurrentPopup();
                     // bake finished, update images
+                    /*
                     if (config.output.colorData != nullptr) {
                         SDL_Surface* surface = SDL_CreateSurfaceFrom(config.output.width, config.output.width, SDL_PIXELFORMAT_RGBA32, config.output.colorData, config.output.width * 4);
                         if (colorTex != nullptr)
@@ -807,29 +911,44 @@ bool gui_main(SDL_GPUDevice* gpu) {
                         }
                         SDL_DestroySurface(surface);
                     }
-                    render_preview(renderer, previewTex, colorTex, filepath);
+                    */
                 }
                 ImGui::EndPopup();
             }
         }
 
         ImGui::Render();
-        SDL_RenderClear(renderer);
-        ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer);
-        SDL_RenderPresent(renderer);
+        
+        SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(gpu);
+        SDL_GPUTexture* swapchainTexture = nullptr;
+        SDL_AcquireGPUSwapchainTexture(cmdbuf, window, &swapchainTexture, nullptr, nullptr);
+        if (swapchainTexture != nullptr) {
+            ImDrawData* drawData = ImGui::GetDrawData();
+            ImGui_ImplSDLGPU3_PrepareDrawData(drawData, cmdbuf);
+            SDL_GPUColorTargetInfo colorInfo{};
+            colorInfo.texture = swapchainTexture;
+            colorInfo.load_op = SDL_GPU_LOADOP_CLEAR;
+            colorInfo.store_op = SDL_GPU_STOREOP_STORE;
+            SDL_GPURenderPass* renderPass = SDL_BeginGPURenderPass(cmdbuf, &colorInfo, 1, nullptr);
+            ImGui_ImplSDLGPU3_RenderDrawData(drawData, cmdbuf, renderPass);
+            SDL_EndGPURenderPass(renderPass);
+        }
+        SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdbuf);
+        SDL_WaitForGPUFences(gpu, true, &fence, 1);
     }
 
     if (colorTex != nullptr)
         SDL_DestroyTexture(colorTex);
     if (dirTex != nullptr)
         SDL_DestroyTexture(dirTex);
-    SDL_DestroyTexture(previewTex);
+    SDL_ReleaseGPUTexture(gpu, previewTex);
 
-    ImGui_ImplSDLRenderer3_Shutdown();
+    ImGui_ImplSDLGPU3_Shutdown();
     ImGui_ImplSDL3_Shutdown();
+    ImPlot3D::DestroyContext();
     ImGui::DestroyContext();
 
-    SDL_DestroyRenderer(renderer);
+    SDL_ReleaseWindowFromGPUDevice(gpu, window);
     SDL_DestroyWindow(window);
     return true;
 }

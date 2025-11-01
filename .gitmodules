@@ -10,3 +10,6 @@
 [submodule "imgui"]
 	path = imgui
 	url = git@github.com:ocornut/imgui.git
+[submodule "implot3d"]
+	path = implot3d
+	url = git@github.com:brenocq/implot3d.git

@@ -32,18 +32,22 @@ add_subdirectory(volk)
 # include(JoltPhysics/Build/CMakeLists.txt)
 #add_subdirectory(JoltPhysics/Build)
 
-add_library(imgui STATIC imgui/imgui.cpp imgui/imgui_draw.cpp imgui/imgui_tables.cpp imgui/imgui_widgets.cpp imgui/backends/imgui_impl_sdl3.cpp imgui/backends/imgui_impl_sdlrenderer3.cpp)
+add_library(imgui STATIC imgui/imgui.cpp imgui/imgui_draw.cpp imgui/imgui_tables.cpp imgui/imgui_widgets.cpp imgui/backends/imgui_impl_sdl3.cpp imgui/backends/imgui_impl_sdlgpu3.cpp)
 target_compile_definitions(imgui PUBLIC VK_NO_PROTOTYPES)
 target_include_directories(imgui PUBLIC SDL3::Headers imgui imgui/backends volk)
 target_link_libraries(imgui PUBLIC SDL3::SDL3-shared volk)
+
+add_library(implot3d STATIC implot3d/implot3d.cpp implot3d/implot3d_items.cpp implot3d/implot3d_meshes.cpp)
+target_include_directories(imgui PUBLIC imgui)
+target_link_libraries(implot3d PUBLIC imgui)
 
 file(GLOB_RECURSE SRCS src/**.cpp src/**.c src/**.hpp src/**.h)
 
 add_executable(lightmap main.cpp)
 target_compile_definitions(lightmap PUBLIC VK_NO_PROTOTYPES)
 target_sources(lightmap PUBLIC ${SRCS})
-target_include_directories(lightmap PUBLIC src/ glm SDL3::Headers imgui)
-target_link_libraries(lightmap PUBLIC glm SDL3::SDL3-shared imgui)
+target_include_directories(lightmap PUBLIC src/ glm SDL3::Headers imgui implot3d)
+target_link_libraries(lightmap PUBLIC glm SDL3::SDL3-shared imgui implot3d)
 
 set(SHADER_SOURCES assets/lightmap.slang)
 
