@@ -49,7 +49,8 @@ target_sources(lightmap PUBLIC ${SRCS})
 target_include_directories(lightmap PUBLIC src/ glm SDL3::Headers imgui implot3d)
 target_link_libraries(lightmap PUBLIC glm SDL3::SDL3-shared imgui implot3d)
 
-set(SHADER_SOURCES assets/lightmap.slang)
+set(SHADER_SOURCES assets/basic.slang)
+set(SHADER_COMPUTE_SOURCES assets/lightmap.slang)
 
 add_custom_command(
     TARGET lightmap POST_BUILD
@@ -63,6 +64,23 @@ add_custom_command(
 )
 
 foreach(shader_file ${SHADER_SOURCES})
+    get_filename_component(file_spv ${shader_file} NAME_WE)
+    set(file_spv "${file_spv}")
+    get_filename_component(file_dxil ${shader_file} NAME_WE)
+    set(file_dxil "${file_dxil}")
+    add_custom_command(
+        TARGET lightmap POST_BUILD
+        # COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -emit-spirv-via-glsl -DSLANGC -target spirv -profile spirv_1_0 -entry main -o $<TARGET_FILE_DIR:lightmap>/assets/${file_spv}.spv
+        COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -target spirv -profile spirv_1_3 -entry vertexMain -o $<TARGET_FILE_DIR:lightmap>/assets/${file_spv}.vert.spv
+        COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -target spirv -profile spirv_1_3 -entry fragmentMain -o $<TARGET_FILE_DIR:lightmap>/assets/${file_spv}.frag.spv
+        # COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -target dxil -profile sm_6_0 -entry vertexMain -o $<TARGET_FILE_DIR:lightmap>/assets/${file_dxil}.vert.dxil
+        # COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -target dxil -profile sm_6_0 -entry fragmentMain -o $<TARGET_FILE_DIR:lightmap>/assets/${file_dxil}.frag.dxil
+        # COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -target dxbc -profile sm_5_1 -entry vertexMain -o $<TARGET_FILE_DIR:lightmap>/assets/${file_dxil}.vert.dxbc
+        # COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -target dxbc -profile sm_5_1 -entry fragmentMain -o $<TARGET_FILE_DIR:lightmap>/assets/${file_dxil}.frag.dxbc
+    )
+endforeach()
+
+foreach(shader_file ${SHADER_COMPUTE_SOURCES})
     get_filename_component(file_spv ${shader_file} NAME_WE)
     set(file_spv "${file_spv}")
     get_filename_component(file_dxil ${shader_file} NAME_WE)

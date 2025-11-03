@@ -24,6 +24,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_stdinc.h>
+#include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_gpu.h>
@@ -45,6 +46,16 @@ struct BakeThreadConfig {
     std::string filePath;
     uint16_t textureSize;
     BakedLightmapData output;
+};
+
+struct PreviewPerView {
+    float4x4 uWorld;
+    float4x4 uInvWorld;
+    float4x4 uView;
+    float4x4 uInvView;
+    float4x4 uProjection;
+    float4x4 uInvProjection;
+    float3 uViewPos;
 };
 
 bool should_cancel_bake = false;
@@ -147,6 +158,50 @@ bool upload_buffer(SDL_GPUDevice* gpu, SDL_GPUBuffer* buffer, size_t datasize, v
     destBufferInfo.offset = 0;
     destBufferInfo.size = (uint32_t)datasize;
     SDL_UploadToGPUBuffer(copyPass, &transferSrcInfo, &destBufferInfo, true);
+    SDL_EndGPUCopyPass(copyPass);
+    SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdbuf);
+    if (fence == nullptr) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPU command buffer submission failed: %s", SDL_GetError());
+        return false;
+    }
+    SDL_WaitForGPUFences(gpu, true, &fence, 1);
+    SDL_ReleaseGPUFence(gpu, fence);
+    SDL_ReleaseGPUTransferBuffer(gpu, transferBuffer);
+    return true;
+}
+
+bool upload_buffer_tex(SDL_GPUDevice* gpu, SDL_GPUTexture* buffer, uint32_t width, uint32_t height, uint32_t compSize, void* data) {
+    SDL_GPUTransferBufferCreateInfo transferCreateInfo{};
+    transferCreateInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    transferCreateInfo.size = width * height * compSize;
+    SDL_GPUTransferBuffer* transferBuffer = SDL_CreateGPUTransferBuffer(gpu, &transferCreateInfo);
+    if (transferBuffer == nullptr) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPU transfer buffer creation failed: %s", SDL_GetError());
+        return false;
+    }
+    void* rawBufferData = SDL_MapGPUTransferBuffer(gpu, transferBuffer, true);
+    if (rawBufferData == nullptr) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPU transfer buffer mapping failed: %s", SDL_GetError());
+        return false;
+    }
+    memcpy(rawBufferData, data, width * height * compSize);
+    SDL_UnmapGPUTransferBuffer(gpu, transferBuffer);
+    SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(gpu);
+    if (cmdbuf == nullptr) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPU command buffer acquisition failed: %s", SDL_GetError());
+        return false;
+    }
+    SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(cmdbuf);
+    SDL_GPUTextureTransferInfo transferSrcInfo{};
+    transferSrcInfo.transfer_buffer = transferBuffer;
+    transferSrcInfo.pixels_per_row = width;
+    transferSrcInfo.rows_per_layer = height;
+    SDL_GPUTextureRegion destBufferInfo{};
+    destBufferInfo.texture = buffer;
+    destBufferInfo.w = width;
+    destBufferInfo.h = height;
+    destBufferInfo.d = 1;
+    SDL_UploadToGPUTexture(copyPass, &transferSrcInfo, &destBufferInfo, true);
     SDL_EndGPUCopyPass(copyPass);
     SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdbuf);
     if (fence == nullptr) {
@@ -391,13 +446,13 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
     }
 
     size_t filesize = 0;
-    uint8_t* lightmap = malloc_file("assets/lightmap.spv", &filesize);
+    uint8_t* lightmap = (uint8_t *)SDL_LoadFile("assets/lightmap.spv", &filesize);
     if (lightmap == nullptr) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Lightmap shader file not found");
         result = false;
     } else {
         SDL_GPUComputePipeline* pipeline = create_pipeline(gpu, filesize, lightmap);
-        free(lightmap);
+        SDL_free(lightmap);
         lightmap = nullptr;
         if (pipeline == nullptr) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Compute pipeline creation failed: %s", SDL_GetError());
@@ -637,7 +692,55 @@ std::vector<ImPlot3DPoint> get_ImPlot3D_verts(const AABB aabb, const std::vector
     return sdl_verts;
 }
 
-void render_preview(SDL_GPUDevice* gpu, SDL_GPUTexture* outputTexture, const std::string path) {
+SDL_GPUShader* load_shader(SDL_GPUDevice* gpu, std::string filepath, SDL_GPUShaderStage stage, uint32_t samplers, uint32_t uniforms) {
+    size_t codeSize;
+    void* code = SDL_LoadFile(filepath.c_str(), &codeSize);
+
+    SDL_GPUShaderCreateInfo shaderInfo{};
+    shaderInfo.code = (const uint8_t*)code;
+    shaderInfo.code_size = codeSize;
+    shaderInfo.entrypoint = "main";
+    shaderInfo.format = SDL_GPU_SHADERFORMAT_SPIRV;
+    shaderInfo.stage = stage;
+    shaderInfo.num_samplers = samplers;
+    shaderInfo.num_uniform_buffers = uniforms;
+    shaderInfo.num_storage_buffers = 0;
+    shaderInfo.num_storage_textures = 0;
+    SDL_GPUShader* shader = SDL_CreateGPUShader(gpu, &shaderInfo);
+    if (shader == nullptr) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Unable to create shader: %s", SDL_GetError());
+    }
+    if (code != nullptr) {
+        SDL_free(code);
+    }
+    return shader;
+}
+
+SDL_GPUTextureCreateInfo create_texture_info(uint32_t w, uint32_t h) {
+    SDL_GPUTextureCreateInfo info{};
+    info.type = SDL_GPU_TEXTURETYPE_2D;
+    info.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    info.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    info.width = w;
+    info.height = h;
+    info.layer_count_or_depth = 1;
+    info.num_levels = 1;
+    return info;
+}
+
+SDL_GPUTexture* load_texture(SDL_GPUDevice* gpu, const char* path) {
+    int x,y,n;
+    unsigned char* data = stbi_load(path, &x, &y, &n, 4);
+    if (data == nullptr) {
+        return nullptr;
+    }
+    SDL_GPUTexture* tex = SDL_CreateGPUTexture(gpu, &create_texture_info(x, y));
+    upload_buffer_tex(gpu, tex, x, y, 4, (void*)data);
+    stbi_image_free(data);
+    return tex;
+}
+
+void render_preview(SDL_GPUDevice* gpu, SDL_GPUTexture* outputTexture, SDL_GPUTextureFormat outputFormat, const std::string path) {
     std::vector<MeshObject> meshes{};
     std::vector<MeshVertex> verts{};
     std::vector<uint4> inds{};
@@ -646,10 +749,27 @@ void render_preview(SDL_GPUDevice* gpu, SDL_GPUTexture* outputTexture, const std
     if (meshes.size() == 0) {
         return;
     }
+    AABB aabb{};
+    for (size_t i = 0; i < verts.size(); i++) {
+        aabb.min_pos = glm::min(aabb.min_pos, verts[i].position);
+        aabb.max_pos = glm::max(aabb.max_pos, verts[i].position);
+    }
+    float3 minpos = float3(aabb.min_pos.x, aabb.min_pos.y, aabb.min_pos.z);
+    float3 maxpos = float3(aabb.max_pos.x, aabb.max_pos.y, aabb.max_pos.z);
+    float dist = glm::distance(minpos, maxpos);
+
     std::vector<uint16_t> indexes{};
     for (size_t i = 0; i < inds.size(); i++) {
         indexes.push_back((uint16_t)inds[i].x);
     }
+
+    SDL_GPUShader* vertShader = load_shader(gpu, "assets/basic.vert.spv", SDL_GPU_SHADERSTAGE_VERTEX, 0, 1);
+    SDL_GPUShader* fragShader = load_shader(gpu, "assets/basic.frag.spv", SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 0);
+
+    SDL_GPUTexture* colorTex = load_texture(gpu, "color.png");
+
+    SDL_GPUSamplerCreateInfo samplerInfo{};
+    SDL_GPUSampler* sampler = SDL_CreateGPUSampler(gpu, &samplerInfo);
 
     SDL_GPUBuffer* vertexBuffer;
     create_buffer(gpu, verts.size() * sizeof(MeshVertex), SDL_GPU_BUFFERUSAGE_VERTEX, &vertexBuffer);
@@ -659,10 +779,41 @@ void render_preview(SDL_GPUDevice* gpu, SDL_GPUTexture* outputTexture, const std
     create_buffer(gpu, indexes.size() * sizeof(uint16_t), SDL_GPU_BUFFERUSAGE_INDEX, &indexBuffer);
     upload_buffer(gpu, indexBuffer, indexes.size() * sizeof(uint16_t), indexes.data());
 
+    SDL_GPUVertexBufferDescription vertState{0, sizeof(MeshVertex), SDL_GPU_VERTEXINPUTRATE_VERTEX, 0};
+    SDL_GPUVertexAttribute attribs[3] = {
+        SDL_GPUVertexAttribute{0, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4, sizeof(float) * 0},
+        SDL_GPUVertexAttribute{1, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4, sizeof(float) * 4},
+        SDL_GPUVertexAttribute{2, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4, sizeof(float) * 8},
+    };
+
     SDL_GPUGraphicsPipelineCreateInfo createInfo{};
-    // createInfo.vertex_shader = vertShader;
-    // createInfo.fragment_shader = fragShader;
-    // SDL_GPUGraphicsPipeline* pipeline = SDL_CreateGPUGraphicsPipeline(gpu, createInfo);
+    createInfo.vertex_shader = vertShader;
+    createInfo.fragment_shader = fragShader;
+
+    SDL_GPUColorTargetDescription colorTargetDesc{};
+    colorTargetDesc.format = outputFormat;
+    colorTargetDesc.blend_state.enable_blend = false;
+
+    createInfo.target_info.num_color_targets = 1;
+    createInfo.target_info.color_target_descriptions = &colorTargetDesc;
+    createInfo.target_info.depth_stencil_format = SDL_GPU_TEXTUREFORMAT_INVALID;
+    createInfo.target_info.has_depth_stencil_target = false;
+
+    createInfo.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+    createInfo.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
+    createInfo.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_BACK;
+    createInfo.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+    createInfo.vertex_input_state.num_vertex_buffers = (uint32_t)1;
+    createInfo.vertex_input_state.vertex_buffer_descriptions = &vertState;
+    createInfo.vertex_input_state.num_vertex_attributes = (uint32_t)3;
+    createInfo.vertex_input_state.vertex_attributes = attribs;
+
+    createInfo.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_LESS_OR_EQUAL;
+    createInfo.depth_stencil_state.enable_depth_test = true;
+    createInfo.depth_stencil_state.enable_depth_write = true;
+    createInfo.depth_stencil_state.enable_stencil_test = false;
+
+    SDL_GPUGraphicsPipeline* pipeline = SDL_CreateGPUGraphicsPipeline(gpu, &createInfo);
 
     SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(gpu);
 
@@ -672,24 +823,45 @@ void render_preview(SDL_GPUDevice* gpu, SDL_GPUTexture* outputTexture, const std
     colorInfo.store_op = SDL_GPU_STOREOP_STORE;
     SDL_GPURenderPass* renderPass = SDL_BeginGPURenderPass(cmdbuf, &colorInfo, 1, nullptr);
 
-    // SDL_BindGPUGraphicsPipeline(renderPass, pipeline);
+    PreviewPerView uniform{};
+    uniform.uWorld = glm::identity<float4x4>();
+    uniform.uInvWorld = glm::inverse(uniform.uWorld);
+    uniform.uView = glm::lookAt(maxpos * 1.5f, float3(0, 0, 0), float3(0, 1, 0));
+    uniform.uInvView = glm::inverse(uniform.uView);
+    float orthoSize = dist;
+    uniform.uProjection = glm::ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, 0.1f, 1000.0f);
+    uniform.uInvProjection = glm::inverse(uniform.uProjection);
+    SDL_PushGPUVertexUniformData(cmdbuf, 0, &uniform, sizeof(PreviewPerView));
+    SDL_GPUTextureSamplerBinding samplerBinding{};
+    samplerBinding.texture = colorTex;
+    samplerBinding.sampler = sampler;
+    SDL_BindGPUFragmentSamplers(renderPass, 0, &samplerBinding, 1);
+    SDL_BindGPUGraphicsPipeline(renderPass, pipeline);
+
+    SDL_GPUBufferBinding vertexBinding{};
+    vertexBinding.buffer = vertexBuffer;
+    SDL_BindGPUVertexBuffers(renderPass, 0, &vertexBinding, 1);
+    SDL_GPUBufferBinding indexBinding{};
+    indexBinding.buffer = indexBuffer;
+    SDL_BindGPUIndexBuffer(renderPass, &indexBinding, SDL_GPU_INDEXELEMENTSIZE_16BIT);
+
+    SDL_DrawGPUIndexedPrimitives(renderPass, (uint32_t)indexes.size(), 1, 0, 0, 0);
 
     SDL_EndGPURenderPass(renderPass);
 
     SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdbuf);
     SDL_WaitForGPUFences(gpu, true, &fence, 1);
 
+    SDL_ReleaseGPUGraphicsPipeline(gpu, pipeline);
+
     SDL_ReleaseGPUBuffer(gpu, vertexBuffer);
     SDL_ReleaseGPUBuffer(gpu, indexBuffer);
 
-    /*
-    std::vector<SDL_Vertex> sdl_verts = get_SDL_verts(meshes[0].aabb, verts, inds);
-    SDL_SetRenderTarget(renderer, texture);
-    SDL_SetRenderDrawColor(renderer, 64, 64, 64, 255);
-    SDL_RenderClear(renderer);
-    SDL_RenderGeometry(renderer, color, sdl_verts.data(), (int)sdl_verts.size(), nullptr, 0);
-    SDL_SetRenderTarget(renderer, nullptr);
-    */
+    SDL_ReleaseGPUSampler(gpu, sampler);
+    SDL_ReleaseGPUTexture(gpu, colorTex);
+
+    SDL_ReleaseGPUShader(gpu, fragShader);
+    SDL_ReleaseGPUShader(gpu, vertShader);
 }
 
 void file_select(void* userdata, const char* const* filelist, int filter) {
@@ -712,18 +884,6 @@ int bake_thread(void* userdata) {
     } else {
         return EXIT_FAILURE;
     }
-}
-
-SDL_GPUTextureCreateInfo create_texture_info(uint32_t w, uint32_t h) {
-    SDL_GPUTextureCreateInfo info{};
-    info.type = SDL_GPU_TEXTURETYPE_2D;
-    info.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-    info.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
-    info.width = w;
-    info.height = h;
-    info.layer_count_or_depth = 1;
-    info.num_levels = 1;
-    return info;
 }
 
 bool gui_main(SDL_GPUDevice* gpu) {
@@ -755,9 +915,9 @@ bool gui_main(SDL_GPUDevice* gpu) {
     std::string filepath = "";
     BakeThreadConfig config = {};
     SDL_Thread* thread = nullptr;
-    SDL_Texture* colorTex = nullptr;
+    SDL_GPUTexture* colorTex = nullptr;
     int32_t colorTexWidth = 0;
-    SDL_Texture* dirTex = nullptr;
+    SDL_GPUTexture* dirTex = nullptr;
     int32_t dirTexWidth = 0;
 
     std::vector<MeshObject> meshes{};
@@ -832,7 +992,7 @@ bool gui_main(SDL_GPUDevice* gpu) {
                         for (size_t i = 0; i < inds.size(); i++) {
                             plotInds.push_back(inds[i].x);
                         }
-                        render_preview(gpu, previewTex, filepath);
+                        render_preview(gpu, previewTex, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, filepath);
                     }
                     ImGui::EndMenu();
                 }
@@ -843,21 +1003,13 @@ bool gui_main(SDL_GPUDevice* gpu) {
             ImGui::SetNextWindowSize(vp->WorkSize);
             ImGui::Begin("Logs", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
             if (colorTex != nullptr) {
-                // ImGui::Image(colorTex, ImVec2(128.0f, 128.0f));
+                ImGui::Image(colorTex, ImVec2(128.0f, 128.0f));
             }
             if (dirTex != nullptr) {
                 if (colorTex != nullptr) {
-                    // ImGui::SameLine();
+                    ImGui::SameLine();
                 }
-                // ImGui::Image(dirTex, ImVec2(128.0f, 128.0f));
-            }
-
-            if (ImPlot3D::BeginPlot("Preview")) {
-                ImPlot3DAxisFlags flags = ImPlot3DAxisFlags_Lock | ImPlot3DAxisFlags_AutoFit;
-                ImPlot3D::SetupAxes("X", "Y", "Z", flags, flags, flags);
-                ImPlot3D::SetupAxesLimits(aabb.min_pos.x - 1, aabb.max_pos.x + 1, aabb.min_pos.y - 1, aabb.max_pos.y + 1, aabb.min_pos.z - 1, aabb.max_pos.z + 1, ImPlot3DCond_Always);
-                ImPlot3D::PlotMesh("Model", points.data(), plotInds.data(), (int)points.size(), (int)plotInds.size());
-                ImPlot3D::EndPlot();
+                ImGui::Image(dirTex, ImVec2(128.0f, 128.0f));
             }
 
             ImGui::Image(previewTex, ImVec2(512.0f, 512.0f));
@@ -884,34 +1036,13 @@ bool gui_main(SDL_GPUDevice* gpu) {
                     }
                     ImGui::CloseCurrentPopup();
                     // bake finished, update images
-                    /*
-                    if (config.output.colorData != nullptr) {
-                        SDL_Surface* surface = SDL_CreateSurfaceFrom(config.output.width, config.output.width, SDL_PIXELFORMAT_RGBA32, config.output.colorData, config.output.width * 4);
-                        if (colorTex != nullptr)
-                            SDL_DestroyTexture(colorTex);
-                        colorTexWidth = 0;
-                        colorTex = SDL_CreateTextureFromSurface(renderer, surface);
-                        if (colorTex == nullptr) {
-                            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Texture creation from surface failed: %s", SDL_GetError());
-                        } else {
-                            colorTexWidth = config.output.width;
-                        }
-                        SDL_DestroySurface(surface);
-                    }
-                    if (config.output.dirData != nullptr) {
-                        SDL_Surface* surface = SDL_CreateSurfaceFrom(config.output.width, config.output.width, SDL_PIXELFORMAT_RGBA32, config.output.dirData, config.output.width * 4);
-                        if (dirTex != nullptr)
-                            SDL_DestroyTexture(dirTex);
-                        dirTexWidth = 0;
-                        dirTex = SDL_CreateTextureFromSurface(renderer, surface);
-                        if (dirTex == nullptr) {
-                            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Texture creation from surface failed: %s", SDL_GetError());
-                        } else {
-                            dirTexWidth = config.output.width;
-                        }
-                        SDL_DestroySurface(surface);
-                    }
-                    */
+                    if (colorTex != nullptr)
+                        SDL_ReleaseGPUTexture(gpu, colorTex);
+                    if (dirTex != nullptr)
+                        SDL_ReleaseGPUTexture(gpu, dirTex);
+                    colorTex = load_texture(gpu, "color.png");
+                    dirTex = load_texture(gpu, "dir.png");
+                    render_preview(gpu, previewTex, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, filepath);
                 }
                 ImGui::EndPopup();
             }
@@ -938,9 +1069,9 @@ bool gui_main(SDL_GPUDevice* gpu) {
     }
 
     if (colorTex != nullptr)
-        SDL_DestroyTexture(colorTex);
+        SDL_ReleaseGPUTexture(gpu, colorTex);
     if (dirTex != nullptr)
-        SDL_DestroyTexture(dirTex);
+        SDL_ReleaseGPUTexture(gpu, dirTex);
     SDL_ReleaseGPUTexture(gpu, previewTex);
 
     ImGui_ImplSDLGPU3_Shutdown();
