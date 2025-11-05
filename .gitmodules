@@ -13,3 +13,6 @@
 [submodule "implot3d"]
 	path = implot3d
 	url = git@github.com:brenocq/implot3d.git
+[submodule "incbin"]
+	path = incbin
+	url = git@github.com:graphitemaster/incbin.git

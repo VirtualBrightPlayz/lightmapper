@@ -9,6 +9,11 @@
 
 #include "shared_data.h"
 
+#include <incbin.h>
+INCBIN(LightmapSPV, "assets/lightmap.spv");
+INCBIN(BasicVertSPV, "assets/basic.vert.spv");
+INCBIN(BasicFragSPV, "assets/basic.frag.spv");
+
 #define TINYGLTF_IMPLEMENTATION
 #include "tiny_gltf.h"
 #define STB_IMAGE_IMPLEMENTATION
@@ -96,7 +101,7 @@ uint8_t* malloc_file(const std::string path, size_t* filesize) {
     return filedata;
 }
 
-SDL_GPUComputePipeline* create_pipeline(SDL_GPUDevice* gpu, size_t filesize, uint8_t* filedata) {
+SDL_GPUComputePipeline* create_pipeline(SDL_GPUDevice* gpu, size_t filesize, const uint8_t* filedata) {
     SDL_GPUComputePipelineCreateInfo createInfo{};
     createInfo.code_size = filesize;
     createInfo.code = filedata;
@@ -445,16 +450,14 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
         return result;
     }
 
-    size_t filesize = 0;
-    std::string path = SDL_GetBasePath();
-    path += "assets/lightmap.spv";
-    uint8_t* lightmap = (uint8_t *)SDL_LoadFile(path.c_str(), &filesize);
+    size_t filesize = gLightmapSPVSize;
+    const uint8_t* lightmap = gLightmapSPVData;
     if (lightmap == nullptr) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Lightmap shader file not found");
         result = false;
     } else {
         SDL_GPUComputePipeline* pipeline = create_pipeline(gpu, filesize, lightmap);
-        SDL_free(lightmap);
+        // SDL_free(lightmap);
         lightmap = nullptr;
         if (pipeline == nullptr) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Compute pipeline creation failed: %s", SDL_GetError());
@@ -700,10 +703,7 @@ std::vector<ImPlot3DPoint> get_ImPlot3D_verts(const AABB aabb, const std::vector
     return sdl_verts;
 }
 
-SDL_GPUShader* load_shader(SDL_GPUDevice* gpu, std::string filepath, SDL_GPUShaderStage stage, uint32_t samplers, uint32_t uniforms) {
-    size_t codeSize;
-    void* code = SDL_LoadFile((SDL_GetBasePath() + filepath).c_str(), &codeSize);
-
+SDL_GPUShader* load_shader(SDL_GPUDevice* gpu, const uint8_t* code, size_t codeSize, SDL_GPUShaderStage stage, uint32_t samplers, uint32_t uniforms) {
     SDL_GPUShaderCreateInfo shaderInfo{};
     shaderInfo.code = (const uint8_t*)code;
     shaderInfo.code_size = codeSize;
@@ -717,9 +717,6 @@ SDL_GPUShader* load_shader(SDL_GPUDevice* gpu, std::string filepath, SDL_GPUShad
     SDL_GPUShader* shader = SDL_CreateGPUShader(gpu, &shaderInfo);
     if (shader == nullptr) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Unable to create shader: %s", SDL_GetError());
-    }
-    if (code != nullptr) {
-        SDL_free(code);
     }
     return shader;
 }
@@ -778,8 +775,8 @@ void render_preview(SDL_GPUDevice* gpu, SDL_GPUTexture* outputTexture, SDL_GPUTe
         return;
     }
 
-    SDL_GPUShader* vertShader = load_shader(gpu, "assets/basic.vert.spv", SDL_GPU_SHADERSTAGE_VERTEX, 0, 1);
-    SDL_GPUShader* fragShader = load_shader(gpu, "assets/basic.frag.spv", SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 0);
+    SDL_GPUShader* vertShader = load_shader(gpu, gBasicVertSPVData, gBasicVertSPVSize, SDL_GPU_SHADERSTAGE_VERTEX, 0, 1);
+    SDL_GPUShader* fragShader = load_shader(gpu, gBasicFragSPVData, gBasicFragSPVSize, SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 0);
 
     SDL_GPUSamplerCreateInfo samplerInfo{};
     SDL_GPUSampler* sampler = SDL_CreateGPUSampler(gpu, &samplerInfo);
