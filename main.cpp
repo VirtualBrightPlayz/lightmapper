@@ -856,6 +856,7 @@ void render_preview(SDL_GPUDevice* gpu, SDL_GPUTexture* outputTexture, SDL_GPUTe
 
     SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdbuf);
     SDL_WaitForGPUFences(gpu, true, &fence, 1);
+    SDL_ReleaseGPUFence(gpu, fence);
 
     SDL_ReleaseGPUGraphicsPipeline(gpu, pipeline);
 
@@ -1071,6 +1072,7 @@ bool gui_main(SDL_GPUDevice* gpu) {
         }
         SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdbuf);
         SDL_WaitForGPUFences(gpu, true, &fence, 1);
+        SDL_ReleaseGPUFence(gpu, fence);
     }
 
     if (colorTex != nullptr)
