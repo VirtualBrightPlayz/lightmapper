@@ -22,17 +22,9 @@ if (MSVC)
     # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zc:__cplusplus /Gm- /MP /nologo /diagnostics:classic /FC /fp:except- /Zc:inline")
 endif()
 
-# include(${CMAKE_CURRENT_SOURCE_DIR}/CMakeRC.cmake)
-
-# find_package(Vulkan REQUIRED)
 find_package(SDL3 REQUIRED)
-# find_package(SDL3_shadercross REQUIRED)
-# add_subdirectory(tinyobjloader)
 add_subdirectory(glm)
-#add_subdirectory(FastNoise2)
 add_subdirectory(volk)
-# include(JoltPhysics/Build/CMakeLists.txt)
-#add_subdirectory(JoltPhysics/Build)
 
 add_library(imgui STATIC imgui/imgui.cpp imgui/imgui_draw.cpp imgui/imgui_tables.cpp imgui/imgui_widgets.cpp imgui/backends/imgui_impl_sdl3.cpp imgui/backends/imgui_impl_sdlgpu3.cpp)
 target_compile_definitions(imgui PUBLIC VK_NO_PROTOTYPES)
@@ -47,12 +39,6 @@ add_executable(incbin incbin/incbin.c)
 
 file(GLOB_RECURSE SRCS src/**.cpp src/**.c src/**.hpp src/**.h)
 
-# cmrc_add_resource_library(lightmap-rc
-#     WHENCE ${CMAKE_CURRENT_SOURCE_DIR}/assets
-#     ${CMAKE_CURRENT_SOURCE_DIR}/assets/lightmap.spv
-# )
-# target_link_libraries(lightmap PRIVATE lightmap-rc)
-
 set(SHADER_SOURCES assets/basic.slang)
 set(SHADER_COMPUTE_SOURCES assets/lightmap.slang)
 
@@ -61,12 +47,6 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E make_directory ${PROJECT_BINARY_DIR}/assets
 )
 
-# add_custom_command(
-#     TARGET lightmap POST_BUILD
-#     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-#     COMMAND ${CMAKE_COMMAND} -E copy_directory assets $<TARGET_FILE_DIR:lightmap>/assets
-# )
-
 foreach(shader_file ${SHADER_SOURCES})
     get_filename_component(file_spv ${shader_file} NAME_WE)
     set(file_spv "${file_spv}")
@@ -74,8 +54,6 @@ foreach(shader_file ${SHADER_SOURCES})
     set(file_dxil "${file_dxil}")
     add_custom_command(
         TARGET incbin PRE_BUILD
-        # OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/assets/${file_spv}.vert.spv ${CMAKE_CURRENT_SOURCE_DIR}/assets/${file_spv}.frag.spv
-        # DEPENDS incbin
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -target spirv -profile spirv_1_3 -entry vertexMain -o ${PROJECT_BINARY_DIR}/assets/${file_spv}.vert.spv
         COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -target spirv -profile spirv_1_3 -entry fragmentMain -o ${PROJECT_BINARY_DIR}/assets/${file_spv}.frag.spv
@@ -93,7 +71,6 @@ foreach(shader_file ${SHADER_COMPUTE_SOURCES})
     set(file_dxil "${file_dxil}")
     add_custom_command(
         TARGET incbin PRE_BUILD
-        # OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/assets/${file_spv}.spv
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -emit-spirv-via-glsl -DSLANGC -target spirv -profile spirv_1_0 -entry main -o ${PROJECT_BINARY_DIR}/assets/${file_spv}.spv
         # COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -target spirv -profile spirv_1_3 -entry vertexMain -o $<TARGET_FILE_DIR:lightmap>/assets/${file_spv}.vert.spv
@@ -113,7 +90,6 @@ target_link_libraries(lightmap PUBLIC glm SDL3::SDL3-shared imgui implot3d)
 
 add_custom_command(
     TARGET lightmap PRE_BUILD
-    # OUTPUT ${PROJECT_BINARY_DIR}/data.c
     WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
     COMMAND $<TARGET_FILE:incbin> ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp -o ${PROJECT_BINARY_DIR}/data.c
 )
