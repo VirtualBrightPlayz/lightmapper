@@ -446,7 +446,9 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
     }
 
     size_t filesize = 0;
-    uint8_t* lightmap = (uint8_t *)SDL_LoadFile("assets/lightmap.spv", &filesize);
+    std::string path = SDL_GetBasePath();
+    path += "assets/lightmap.spv";
+    uint8_t* lightmap = (uint8_t *)SDL_LoadFile(path.c_str(), &filesize);
     if (lightmap == nullptr) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Lightmap shader file not found");
         result = false;
@@ -614,21 +616,22 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
                                     rgba8[l] = (uint8_t)(SDL_clamp(val, 0.0f, 1.0f) * 255.0f);
                                 }
                                 stbi_flip_vertically_on_write(0);
+                                std::string basepath = SDL_GetBasePath();
                                 if (k == 0)
                                 {
                                     if (data != nullptr)
                                         memcpy(data->colorData, rgba8, w * h * 4);
-                                    stbi_write_png("color.png", w, h, 4, rgba8, w * 4);
+                                    stbi_write_png((basepath + "color.png").c_str(), w, h, 4, rgba8, w * 4);
                                 }
                                 else if (k == 1)
                                 {
                                     if (data != nullptr)
                                         memcpy(data->dirData, rgba8, w * h * 4);
-                                    stbi_write_png("dir.png", w, h, 4, rgba8, w * 4);
+                                    stbi_write_png((basepath + "dir.png").c_str(), w, h, 4, rgba8, w * 4);
                                 }
                                 else
                                 {
-                                    stbi_write_png("output.png", w, h, 4, rgba8, w * 4);
+                                    stbi_write_png((basepath + "output.png").c_str(), w, h, 4, rgba8, w * 4);
                                 }
                                 free(rgba8);
                                 SDL_UnmapGPUTransferBuffer(gpu, transferBuffer);
@@ -699,7 +702,7 @@ std::vector<ImPlot3DPoint> get_ImPlot3D_verts(const AABB aabb, const std::vector
 
 SDL_GPUShader* load_shader(SDL_GPUDevice* gpu, std::string filepath, SDL_GPUShaderStage stage, uint32_t samplers, uint32_t uniforms) {
     size_t codeSize;
-    void* code = SDL_LoadFile(filepath.c_str(), &codeSize);
+    void* code = SDL_LoadFile((SDL_GetBasePath() + filepath).c_str(), &codeSize);
 
     SDL_GPUShaderCreateInfo shaderInfo{};
     shaderInfo.code = (const uint8_t*)code;
@@ -771,7 +774,9 @@ void render_preview(SDL_GPUDevice* gpu, SDL_GPUTexture* outputTexture, SDL_GPUTe
     SDL_GPUShader* vertShader = load_shader(gpu, "assets/basic.vert.spv", SDL_GPU_SHADERSTAGE_VERTEX, 0, 1);
     SDL_GPUShader* fragShader = load_shader(gpu, "assets/basic.frag.spv", SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 0);
 
-    SDL_GPUTexture* colorTex = load_texture(gpu, "color.png");
+    std::string filepath = SDL_GetBasePath();
+    filepath += "color.png";
+    SDL_GPUTexture* colorTex = load_texture(gpu, path.c_str());
 
     SDL_GPUSamplerCreateInfo samplerInfo{};
     SDL_GPUSampler* sampler = SDL_CreateGPUSampler(gpu, &samplerInfo);
@@ -1009,13 +1014,13 @@ bool gui_main(SDL_GPUDevice* gpu) {
             ImGui::SetNextWindowSize(vp->WorkSize);
             ImGui::Begin("Logs", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
             if (colorTex != nullptr) {
-                ImGui::Image(colorTex, ImVec2(128.0f, 128.0f));
+                ImGui::Image(colorTex, ImVec2(512.0f, 512.0f));
             }
             if (dirTex != nullptr) {
                 if (colorTex != nullptr) {
                     ImGui::SameLine();
                 }
-                ImGui::Image(dirTex, ImVec2(128.0f, 128.0f));
+                ImGui::Image(dirTex, ImVec2(512.0f, 512.0f));
             }
 
             ImGui::Image(previewTex, ImVec2(512.0f, 512.0f));
@@ -1046,8 +1051,9 @@ bool gui_main(SDL_GPUDevice* gpu) {
                         SDL_ReleaseGPUTexture(gpu, colorTex);
                     if (dirTex != nullptr)
                         SDL_ReleaseGPUTexture(gpu, dirTex);
-                    colorTex = load_texture(gpu, "color.png");
-                    dirTex = load_texture(gpu, "dir.png");
+                    std::string basepath = SDL_GetBasePath();
+                    colorTex = load_texture(gpu, (basepath + "color.png").c_str());
+                    dirTex = load_texture(gpu, (basepath + "dir.png").c_str());
                     render_preview(gpu, previewTex, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, filepath);
                 }
                 ImGui::EndPopup();
