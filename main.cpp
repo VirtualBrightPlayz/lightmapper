@@ -68,14 +68,14 @@ std::vector<std::string> logged_data = {};
 void progress_reset() {
     last_progress_time = (std::time_t)0;
     last_progress_value = -1;
-    std::cout << (char)27 << "]9;4;0;0" << (char)7;
+    // std::cout << (char)27 << "]9;4;0;0" << (char)7;
 }
 
 void report_progress(const int32_t progress) {
     std::time_t cur = std::time(nullptr);
     last_progress_value = progress;
     if (cur > last_progress_time) {
-        std::cout << (char)27 << "]9;4;1;" << progress << (char)7;
+        // std::cout << (char)27 << "]9;4;1;" << progress << (char)7;
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "[%i%%]", progress);
         last_progress_time = cur;
     }
@@ -414,7 +414,7 @@ void load_glb(std::string file, std::vector<MeshObject>& meshes, std::vector<Mes
     }
 }
 
-bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldCancelFunc)(), const std::string glbPath, const uint16_t texSize, const uint32_t seed = 0) {
+bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldCancelFunc)(), const std::string glbPath, const uint16_t texSize, const uint32_t seed = 0, const uint32_t samples = 4) {
     progress_reset();
     const uint16_t w = texSize;
     const uint16_t h = w;
@@ -487,27 +487,37 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
             SDL_GPUTextureCreateInfo textureCreateInfo{};
             textureCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
             textureCreateInfo.format = SDL_GPU_TEXTUREFORMAT_R32G32B32A32_FLOAT;
-            textureCreateInfo.usage = SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE;
+            textureCreateInfo.usage = SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_READ | SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE;
             textureCreateInfo.width = w;
             textureCreateInfo.height = h;
             textureCreateInfo.layer_count_or_depth = 1;
             textureCreateInfo.num_levels = 1;
             SDL_GPUTexture* texture = SDL_CreateGPUTexture(gpu, &textureCreateInfo);
+
+            SDL_GPUTextureCreateInfo colorTextureCreateInfo{};
+            colorTextureCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
+            colorTextureCreateInfo.format = SDL_GPU_TEXTUREFORMAT_R32G32B32A32_FLOAT;
+            colorTextureCreateInfo.usage = SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_READ | SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE;
+            colorTextureCreateInfo.width = w;
+            colorTextureCreateInfo.height = h;
+            colorTextureCreateInfo.layer_count_or_depth = 1;
+            colorTextureCreateInfo.num_levels = 1;
+            SDL_GPUTexture* colorTexture = SDL_CreateGPUTexture(gpu, &colorTextureCreateInfo);
+
+            SDL_GPUTextureCreateInfo dirTextureCreateInfo{};
+            dirTextureCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
+            dirTextureCreateInfo.format = SDL_GPU_TEXTUREFORMAT_R32G32B32A32_FLOAT;
+            dirTextureCreateInfo.usage = SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_READ | SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE;
+            dirTextureCreateInfo.width = w;
+            dirTextureCreateInfo.height = h;
+            dirTextureCreateInfo.layer_count_or_depth = 1;
+            dirTextureCreateInfo.num_levels = 1;
+            SDL_GPUTexture* dirTexture = SDL_CreateGPUTexture(gpu, &dirTextureCreateInfo);
+
             if (texture == nullptr) {
                 SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPU texture creation failed: %s", SDL_GetError());
                 result = false;
             } else {
-
-                // SDL_GPUTextureCreateInfo textureCreateInfo{};
-                // textureCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
-                // textureCreateInfo.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-                // textureCreateInfo.usage = SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE;
-                // textureCreateInfo.width = w;
-                // textureCreateInfo.height = h;
-                // textureCreateInfo.layer_count_or_depth = 1;
-                // textureCreateInfo.num_levels = 1;
-                // SDL_GPUTexture* outputTexture = SDL_CreateGPUTexture(gpu, &textureCreateInfo);
-
                 SDL_GPUTransferBufferCreateInfo transferCreateInfo{};
                 transferCreateInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;
                 transferCreateInfo.size = w * h * 4 * sizeof(float);
@@ -523,54 +533,47 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
                     }
                     size_t wCalc = w / calcWidth;
                     size_t hCalc = h / calcWidth;
-                    size_t count = w * h * 2;
+                    size_t count = w * h * 2 * samples;
                     for (size_t k = 0; k < 2; k++) {
-                        for (size_t i = 0; i < w; i+=calcWidth) {
-                            for (size_t j = 0; j < h; j+=calcWidth) {
-                                report_progress((int)((float)(k * w * h + i * w + j) / (float)count * 100.0f));
-                                params.offsetPixels.x = (uint32_t)i;
-                                params.offsetPixels.y = (uint32_t)j;
-                                params.offsetPixels.z = (uint32_t)k;
-                                upload_buffer(gpu, paramsBuffer, sizeof(ParamsType), &params);
-                                SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(gpu);
-                                if (cmdbuf == nullptr) {
-                                    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPU command buffer acquisition failed: %s", SDL_GetError());
-                                    result = false;
-                                } else {
-                                    // compute pass
-                                    SDL_GPUStorageTextureReadWriteBinding binding{};
-                                    binding.texture = texture;
-                                    binding.cycle = true;
-                                    SDL_GPUComputePass* computePass = SDL_BeginGPUComputePass(cmdbuf, &binding, 1, nullptr, 0);
-                                    SDL_GPUBuffer* bufferBindings[] = {paramsBuffer, meshesBuffer, vertsBuffer, indsBuffer, lightsBuffer};
-                                    SDL_BindGPUComputeStorageBuffers(computePass, 0, bufferBindings, 5);
-                                    SDL_BindGPUComputePipeline(computePass, pipeline);
-                                    SDL_DispatchGPUCompute(computePass, calcWidth / 8, calcWidth / 8, 1);
-                                    SDL_EndGPUComputePass(computePass);
-                                    /*
-                                    // copy pass
-                                    SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(cmdbuf);
-                                    SDL_GPUTextureRegion sourceRegion{};
-                                    sourceRegion.texture = texture;
-                                    sourceRegion.w = w;
-                                    sourceRegion.h = h;
-                                    sourceRegion.d = 1;
-                                    SDL_GPUTextureTransferInfo destInfo{};
-                                    destInfo.transfer_buffer = transferBuffer;
-                                    SDL_DownloadFromGPUTexture(copyPass, &sourceRegion, &destInfo);
-                                    SDL_EndGPUCopyPass(copyPass);
-                                    */
-                                    SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdbuf);
-                                    if (fence == nullptr) {
-                                        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPU command buffer submission failed: %s", SDL_GetError());
+                        for (uint32_t sample = 0; sample < samples; sample++) {
+                            for (size_t i = 0; i < w; i+=calcWidth) {
+                                for (size_t j = 0; j < h; j+=calcWidth) {
+                                    report_progress((int)((float)(k * w * h * samples + sample * w * h + i * w + j) / (float)count * 100.0f));
+                                    params.inSeed.x = (float)(seed + sample);
+                                    params.inSeed.y = (float)sample;
+                                    params.offsetPixels.x = (uint32_t)i;
+                                    params.offsetPixels.y = (uint32_t)j;
+                                    params.offsetPixels.z = (uint32_t)k;
+                                    upload_buffer(gpu, paramsBuffer, sizeof(ParamsType), &params);
+                                    SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(gpu);
+                                    if (cmdbuf == nullptr) {
+                                        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPU command buffer acquisition failed: %s", SDL_GetError());
                                         result = false;
                                     } else {
-                                        SDL_WaitForGPUFences(gpu, true, &fence, 1);
-                                        SDL_ReleaseGPUFence(gpu, fence);
-                                        if (shouldCancelFunc != nullptr && shouldCancelFunc()) {
-                                            // k = 2;
-                                            i = w;
-                                            j = h;
+                                        // compute pass
+                                        SDL_GPUStorageTextureReadWriteBinding binding[2] = {
+                                            SDL_GPUStorageTextureReadWriteBinding{k == 0 ? colorTexture : dirTexture},
+                                            SDL_GPUStorageTextureReadWriteBinding{texture}
+                                        };
+                                        SDL_GPUComputePass* computePass = SDL_BeginGPUComputePass(cmdbuf, binding, 2, nullptr, 0);
+                                        SDL_GPUBuffer* bufferBindings[] = {paramsBuffer, meshesBuffer, vertsBuffer, indsBuffer, lightsBuffer};
+                                        SDL_BindGPUComputeStorageBuffers(computePass, 0, bufferBindings, 5);
+                                        SDL_BindGPUComputePipeline(computePass, pipeline);
+                                        SDL_DispatchGPUCompute(computePass, calcWidth / 8, calcWidth / 8, 1);
+                                        SDL_EndGPUComputePass(computePass);
+                                        SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdbuf);
+                                        if (fence == nullptr) {
+                                            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPU command buffer submission failed: %s", SDL_GetError());
+                                            result = false;
+                                        } else {
+                                            SDL_WaitForGPUFences(gpu, true, &fence, 1);
+                                            SDL_ReleaseGPUFence(gpu, fence);
+                                            if (shouldCancelFunc != nullptr && shouldCancelFunc()) {
+                                                // k = 2;
+                                                sample = samples;
+                                                i = w;
+                                                j = h;
+                                            }
                                         }
                                     }
                                 }
@@ -588,7 +591,7 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
                             // dstLocation.texture = outputTexture;
                             // SDL_CopyGPUTextureToTexture(copyPass, &srcLocation, &dstLocation, w, h, 1, true);
                             SDL_GPUTextureRegion sourceRegion{};
-                            sourceRegion.texture = texture;
+                            sourceRegion.texture = k == 0 ? colorTexture : dirTexture;
                             sourceRegion.w = w;
                             sourceRegion.h = h;
                             sourceRegion.d = 1;
@@ -634,6 +637,8 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
                     }
                     SDL_ReleaseGPUTransferBuffer(gpu, transferBuffer);
                 }
+                SDL_ReleaseGPUTexture(gpu, dirTexture);
+                SDL_ReleaseGPUTexture(gpu, colorTexture);
                 SDL_ReleaseGPUTexture(gpu, texture);
             }
 

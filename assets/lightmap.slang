@@ -3,6 +3,7 @@
 #include "intersect.slang"
 
 layout(binding = 0, set = 1) [format("rgba8")] RWTexture2D<float4> outTex;
+layout(binding = 1, set = 1) [format("rgba8")] Texture2D<float4> colorTex;
 layout(binding = 0, set = 0) StructuredBuffer<ParamsType> Params;
 layout(binding = 1, set = 0) StructuredBuffer<MeshObject> Meshes;
 layout(binding = 2, set = 0) StructuredBuffer<MeshVertex> Vertices;
@@ -197,8 +198,8 @@ bool ShadeDirectMesh(MeshObject mesh, float2 uv1, bool useRay, Ray originRay, in
         {
             amax += PointLights[k].data.x;
             float d = distance(PointLights[k].position.xyz, wpos + wnorm * 0.001);
-            if (d > PointLights[k].position.w * 2)
-                continue;
+            // if (d > PointLights[k].position.w * 2)
+            //     continue;
             float3 result2 = float3(0);
             // blur from light size
             for (uint l = 0; l < 4; l++)
@@ -212,7 +213,7 @@ bool ShadeDirectMesh(MeshObject mesh, float2 uv1, bool useRay, Ray originRay, in
                 ray.predicted_distance = d;
                 float accDist = 0;
                 // bounce this many rays minus one for the initial ray
-                for (uint j = 0; j < 3; j++)
+                for (uint j = 0; j < 2; j++)
                 {
                     RayHit hit = Trace(ray);
                     // Ray ray2 = CreateRay(targetPos, -ray.direction);
@@ -241,7 +242,7 @@ bool ShadeDirectMesh(MeshObject mesh, float2 uv1, bool useRay, Ray originRay, in
                         // float3 tanNormal = mul(GetTangentSpace(wnorm, tangent), worldNormal);
                         // float3 tanNormal = hit.normal;
                         float3 tanNormal = worldNormal;
-                        normal = (normal + float4(tanNormal * attn, attn)) / 2.0;
+                        normal.xyz = (normal.xyz + tanNormal);
                     }
 
                     if (ray.energy.x <= 0.0 && ray.energy.y <= 0.0 && ray.energy.z <= 0.0)
@@ -275,7 +276,8 @@ bool ShadeDirectMesh(MeshObject mesh, float2 uv1, bool useRay, Ray originRay, in
         color = (color + result / result.a) / 2.0;
         color.a = 1.0;
     }
-    lightDir = (lightDir + normal) / 2.0;
+    lightDir.xyz = (lightDir.xyz + normal.xyz);
+    lightDir.w = 1.0;
     return result.a != 0;
 }
 
@@ -289,7 +291,7 @@ float4 TraceMesh(MeshObject mesh, float2 uv1)
     {
         if (Params[0].offsetPixels.z == 1)
         {
-            return ((lightDir) * 0.5) + 0.5;
+            return float4((normalize(lightDir.xyz) * 0.5) + 0.5, 1.0);
         }
         return color;
     }
@@ -312,6 +314,18 @@ void main(uint3 id : SV_DispatchThreadID)
             continue;
         float4 result = TraceMesh(Meshes[i], uv1);
         if (result.w > 0)
-            outTex[uv] = result;
+        {
+            if (Params[0].inSeed.y == 0)
+                outTex[uv] = result;
+            else if (Params[0].offsetPixels.z == 1)
+            {
+                float3 input = outTex[uv].xyz * 2.0 - 1.0;
+                float3 normal = result.xyz * 2.0 - 1.0;
+                float3 output = (input + normal) / 2.0;
+                outTex[uv] = float4(output, 1.0);
+            }
+            else
+                outTex[uv] = outTex[uv] + (result / (Params[0].inSeed.y + 1));
+        }
     }
 }
