@@ -771,12 +771,15 @@ void render_preview(SDL_GPUDevice* gpu, SDL_GPUTexture* outputTexture, SDL_GPUTe
         indexes.push_back((uint16_t)inds[i].x);
     }
 
-    SDL_GPUShader* vertShader = load_shader(gpu, "assets/basic.vert.spv", SDL_GPU_SHADERSTAGE_VERTEX, 0, 1);
-    SDL_GPUShader* fragShader = load_shader(gpu, "assets/basic.frag.spv", SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 0);
-
     std::string filepath = SDL_GetBasePath();
     filepath += "color.png";
-    SDL_GPUTexture* colorTex = load_texture(gpu, path.c_str());
+    SDL_GPUTexture* colorTex = load_texture(gpu, filepath.c_str());
+    if (colorTex == nullptr) {
+        return;
+    }
+
+    SDL_GPUShader* vertShader = load_shader(gpu, "assets/basic.vert.spv", SDL_GPU_SHADERSTAGE_VERTEX, 0, 1);
+    SDL_GPUShader* fragShader = load_shader(gpu, "assets/basic.frag.spv", SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 0);
 
     SDL_GPUSamplerCreateInfo samplerInfo{};
     SDL_GPUSampler* sampler = SDL_CreateGPUSampler(gpu, &samplerInfo);
