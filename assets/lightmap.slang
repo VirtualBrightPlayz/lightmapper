@@ -321,8 +321,8 @@ void main(uint3 id : SV_DispatchThreadID)
             {
                 float3 input = outTex[uv].xyz * 2.0 - 1.0;
                 float3 normal = result.xyz * 2.0 - 1.0;
-                float3 output = (input + normal) / 2.0;
-                outTex[uv] = float4(output, 1.0);
+                float3 output = normalize(input + normal);
+                outTex[uv] = float4(output * 0.5 + 0.5, 1.0);
             }
             else
                 outTex[uv] = outTex[uv] + (result / (Params[0].inSeed.y + 1));
