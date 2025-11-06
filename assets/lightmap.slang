@@ -2,13 +2,13 @@
 #include "ray.slang"
 #include "intersect.slang"
 
-layout(binding = 0, set = 1) [format("rgba8")] RWTexture2D<float4> outTex;
-layout(binding = 1, set = 1) [format("rgba8")] Texture2D<float4> colorTex;
-layout(binding = 0, set = 0) StructuredBuffer<ParamsType> Params;
-layout(binding = 1, set = 0) StructuredBuffer<MeshObject> Meshes;
-layout(binding = 2, set = 0) StructuredBuffer<MeshVertex> Vertices;
-layout(binding = 3, set = 0) StructuredBuffer<uint4> Indices;
-layout(binding = 4, set = 0) StructuredBuffer<PointLightObject> PointLights;
+layout(binding = 0, set = 1) RWTexture2D<float4> outTex;
+layout(binding = 0, set = 0) Texture2D<float4> colorTex;
+layout(binding = 1, set = 0) StructuredBuffer<ParamsType> Params;
+layout(binding = 2, set = 0) StructuredBuffer<MeshObject> Meshes;
+layout(binding = 3, set = 0) StructuredBuffer<MeshVertex> Vertices;
+layout(binding = 4, set = 0) StructuredBuffer<uint4> Indices;
+layout(binding = 5, set = 0) StructuredBuffer<PointLightObject> PointLights;
 
 static float seed = 0;
 static uint3 threadId = uint3(0);
@@ -146,6 +146,8 @@ bool ShadeDirectMesh(MeshObject mesh, float2 uv1, bool useRay, Ray originRay, in
     int2 sizeOut;
     outTex.GetDimensions(sizeOut.x, sizeOut.y);
     float2 halfPixel = 0.5 / sizeOut;
+    float2 halfPixel2 = 0.25 / sizeOut;
+    halfPixel2 = float2(0.0);
     uint offset = uint(mesh.indices.x);
     uint count = offset + uint(mesh.indices.y);
     float4 normal = float4(0);
@@ -156,7 +158,7 @@ bool ShadeDirectMesh(MeshObject mesh, float2 uv1, bool useRay, Ray originRay, in
         MeshVertex v1 = Vertices[uint(Indices[i + 1].x)];
         MeshVertex v2 = Vertices[uint(Indices[i + 2].x)];
         float3 uvw = GetBarycentric((v0.uv01.zw), (v1.uv01.zw), (v2.uv01.zw), (uv1));
-        float3 uvw2 = GetBarycentric((v0.uv01.zw), (v1.uv01.zw), (v2.uv01.zw), (uv1 + halfPixel * 2));
+        float3 uvw2 = GetBarycentric((v0.uv01.zw), (v1.uv01.zw), (v2.uv01.zw), (uv1 + halfPixel2 * 2));
         float2 uvmax = max(max(v0.uv01.zw, v1.uv01.zw), v2.uv01.zw) + halfPixel;
         float2 uvmin = min(min(v0.uv01.zw, v1.uv01.zw), v2.uv01.zw) - halfPixel;
         float minmax = distance(uvw, uvw2) + EPSILON;
@@ -194,6 +196,22 @@ bool ShadeDirectMesh(MeshObject mesh, float2 uv1, bool useRay, Ray originRay, in
         float3 tangent = GetTangent(v0, v1, v2);
         float alpha = 0;
         float amax = 0;
+        // texture lights
+        if (Params[0].inSeed.y != 0)
+        {
+            ray.direction = SampleHemisphere(ray.direction, 1.0);
+            RayHit hit = Trace(ray);
+            result.xyz += colorTex[uint2(hit.uv1 * sizeOut)].xyz;
+            result.w += 1.0;
+            normal.xyz = (normal.xyz + normalize(ray.direction));
+            if (hit.dist != float.maxValue)
+            {
+                float attn = 1.0 / hit.dist;
+                normal.w = (normal.w + attn);// 2.0;
+            }
+            continue;
+        }
+        // point lights
         for (uint k = 0; k < PointLights.getCount(); k++)
         {
             amax += PointLights[k].data.x;
@@ -213,7 +231,7 @@ bool ShadeDirectMesh(MeshObject mesh, float2 uv1, bool useRay, Ray originRay, in
                 ray.predicted_distance = d;
                 float accDist = 0;
                 // bounce this many rays minus one for the initial ray
-                for (uint j = 0; j < 3; j++)
+                for (uint j = 0; j < 1; j++)
                 {
                     RayHit hit = Trace(ray);
                     // Ray ray2 = CreateRay(targetPos, -ray.direction);
@@ -249,8 +267,8 @@ bool ShadeDirectMesh(MeshObject mesh, float2 uv1, bool useRay, Ray originRay, in
                     if (ray.energy.x <= 0.0 && ray.energy.y <= 0.0 && ray.energy.z <= 0.0)
                         break;
                     ray.origin = hit.position + hit.normal * 0.001;
-                    // ray.direction = reflect(ray.direction, hit.normal);
-                    ray.direction = SampleHemisphere(reflect(ray.direction, hit.normal), 1.0);
+                    ray.direction = reflect(ray.direction, hit.normal);
+                    // ray.direction = SampleHemisphere(reflect(ray.direction, hit.normal), 1.0);
                     continue;
                     RayHit hit2 = Trace(ray);
                     if (hit2.dist == float.maxValue)
@@ -324,7 +342,7 @@ void main(uint3 id : SV_DispatchThreadID)
                 float3 normal = result.xyz * 2.0 - 1.0;
                 float3 output = normalize(input + normal);
                 float inAttn = outTex[uv].w;
-                outTex[uv] = float4(output * 0.5 + 0.5, (inAttn + result.w) / 2.0);
+                outTex[uv] = float4(output * 0.5 + 0.5, inAttn + result.w / (Params[0].inSeed.y + 1));
             }
             else
                 outTex[uv] = outTex[uv] + (result / (Params[0].inSeed.y + 1));

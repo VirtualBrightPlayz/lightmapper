@@ -107,7 +107,7 @@ SDL_GPUComputePipeline* create_pipeline(SDL_GPUDevice* gpu, size_t filesize, con
     createInfo.code = filedata;
     createInfo.entrypoint = "main";
     createInfo.format = SDL_GPU_SHADERFORMAT_SPIRV;
-    createInfo.num_readonly_storage_textures = 0;
+    createInfo.num_readonly_storage_textures = 1;
     createInfo.num_readonly_storage_buffers = 5;
     createInfo.num_readwrite_storage_textures = 1;
     createInfo.num_readwrite_storage_buffers = 0;
@@ -419,7 +419,7 @@ void load_glb(std::string file, std::vector<MeshObject>& meshes, std::vector<Mes
     }
 }
 
-bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldCancelFunc)(), const std::string glbPath, const uint16_t texSize, const uint32_t seed = 0, const uint32_t samples = 4) {
+bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldCancelFunc)(), const std::string glbPath, const uint16_t texSize, const uint32_t seed = 0, const uint32_t samples = 1024) {
     progress_reset();
     const uint16_t w = texSize;
     const uint16_t h = w;
@@ -555,13 +555,22 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
                                         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPU command buffer acquisition failed: %s", SDL_GetError());
                                         result = false;
                                     } else {
+                                        // texture copy
+                                        SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(cmdbuf);
+                                        SDL_GPUTextureLocation srcLocation{};
+                                        srcLocation.texture = k == 0 ? colorTexture : dirTexture;
+                                        SDL_GPUTextureLocation dstLocation{};
+                                        dstLocation.texture = texture;
+                                        SDL_CopyGPUTextureToTexture(copyPass, &srcLocation, &dstLocation, w, h, 1, true);
+                                        SDL_EndGPUCopyPass(copyPass);
                                         // compute pass
-                                        SDL_GPUStorageTextureReadWriteBinding binding[2] = {
+                                        SDL_GPUStorageTextureReadWriteBinding binding[1] = {
                                             SDL_GPUStorageTextureReadWriteBinding{k == 0 ? colorTexture : dirTexture},
-                                            SDL_GPUStorageTextureReadWriteBinding{texture}
+                                            // SDL_GPUStorageTextureReadWriteBinding{texture}
                                         };
-                                        SDL_GPUComputePass* computePass = SDL_BeginGPUComputePass(cmdbuf, binding, 2, nullptr, 0);
                                         SDL_GPUBuffer* bufferBindings[] = {paramsBuffer, meshesBuffer, vertsBuffer, indsBuffer, lightsBuffer};
+                                        SDL_GPUComputePass* computePass = SDL_BeginGPUComputePass(cmdbuf, binding, 1, nullptr, 0);
+                                        SDL_BindGPUComputeStorageTextures(computePass, 0, &texture, 1);
                                         SDL_BindGPUComputeStorageBuffers(computePass, 0, bufferBindings, 5);
                                         SDL_BindGPUComputePipeline(computePass, pipeline);
                                         SDL_DispatchGPUCompute(computePass, calcWidth / 8, calcWidth / 8, 1);
