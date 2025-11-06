@@ -379,11 +379,11 @@ void load_glb(std::string file, std::vector<MeshObject>& meshes, std::vector<Mes
             float4x4 r = glm::identity<float4x4>();
             float4x4 s = glm::identity<float4x4>();
             if (node.translation.size() == 3)
-                t = glm::translate(float4x4(), *(float3*)node.translation.data());
+                t = glm::translate(float4x4(), float3(node.translation[0], node.translation[1], node.translation[2]));
             if (node.rotation.size() == 4)
-                r = float4x4(*(glm::quat*)node.rotation.data());
+                r = float4x4(glm::quat(node.rotation[0], node.rotation[1], node.rotation[2], node.rotation[3]));
             if (node.scale.size() == 3)
-                s = glm::scale(float4x4(), *(float3*)node.scale.data());
+                s = glm::scale(float4x4(), float3(node.scale[0], node.scale[1], node.scale[2]));
             float4x4 m = t * r * s;
             size_t meshIndex = 0;
             for (size_t j = 0; j < model.meshes.size(); j++) {

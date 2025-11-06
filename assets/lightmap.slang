@@ -140,6 +140,20 @@ float3 SampleHemisphere(float3 normal, float alpha)
     return mul(tangentSpaceDir, GetTangentSpace(normal));
 }
 
+float3 Hemisphere(float3 normal, float theta)
+{
+    float cosTheta = cos(theta);
+    float sinTheta = sin(theta);
+    float phi = PI * 0.25;
+    float3 tangentSpaceDir = float3(
+        cos(theta) * sin(phi),
+        sin(theta) * sin(phi),
+        cos(phi)
+    );
+
+    return mul(tangentSpaceDir, GetTangentSpace(normal));
+}
+
 bool ShadeDirectMesh(MeshObject mesh, float2 uv1, bool useRay, Ray originRay, inout float4 color, inout float4 lightDir, out RayHit outHit)
 {
     outHit = CreateRayHit();
@@ -199,9 +213,9 @@ bool ShadeDirectMesh(MeshObject mesh, float2 uv1, bool useRay, Ray originRay, in
         // texture lights
         if (Params[0].inSeed.y != 0)
         {
-            for (uint k = 0; k < 6; k++)
+            for (uint k = 0; k < 16; k++)
             {
-                ray.direction = SampleHemisphere(wnorm, 1.0);
+                ray.direction = normalize(Hemisphere(wnorm, (float)k / 16.0 * TAU));
                 RayHit hit = Trace(ray);
                 if (hit.dist != float.maxValue)
                 {
