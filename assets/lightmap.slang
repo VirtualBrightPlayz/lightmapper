@@ -243,6 +243,7 @@ bool ShadeDirectMesh(MeshObject mesh, float2 uv1, bool useRay, Ray originRay, in
                         // float3 tanNormal = hit.normal;
                         float3 tanNormal = worldNormal;
                         normal.xyz = (normal.xyz + tanNormal);
+                        normal.w = (normal.w + attn) / 2.0;
                     }
 
                     if (ray.energy.x <= 0.0 && ray.energy.y <= 0.0 && ray.energy.z <= 0.0)
@@ -277,7 +278,7 @@ bool ShadeDirectMesh(MeshObject mesh, float2 uv1, bool useRay, Ray originRay, in
         color.a = 1.0;
     }
     lightDir.xyz = (lightDir.xyz + normal.xyz);
-    lightDir.w = 1.0;
+    lightDir.w = (lightDir.w + normal.w) / 2.0;
     return result.a != 0;
 }
 
@@ -291,7 +292,7 @@ float4 TraceMesh(MeshObject mesh, float2 uv1)
     {
         if (Params[0].offsetPixels.z == 1)
         {
-            return float4((normalize(lightDir.xyz) * 0.5) + 0.5, 1.0);
+            return float4((normalize(lightDir.xyz) * 0.5) + 0.5, lightDir.w);
         }
         return color;
     }
@@ -322,7 +323,8 @@ void main(uint3 id : SV_DispatchThreadID)
                 float3 input = outTex[uv].xyz * 2.0 - 1.0;
                 float3 normal = result.xyz * 2.0 - 1.0;
                 float3 output = normalize(input + normal);
-                outTex[uv] = float4(output * 0.5 + 0.5, 1.0);
+                float inAttn = outTex[uv].w;
+                outTex[uv] = float4(output * 0.5 + 0.5, (inAttn + result.w) / 2.0);
             }
             else
                 outTex[uv] = outTex[uv] + (result / (Params[0].inSeed.y + 1));
