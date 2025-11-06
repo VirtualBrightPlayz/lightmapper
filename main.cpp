@@ -868,7 +868,7 @@ void render_preview(SDL_GPUDevice* gpu, SDL_GPUTexture* outputTexture, SDL_GPUTe
     PreviewPerView uniform{};
     uniform.uWorld = glm::identity<float4x4>();
     uniform.uInvWorld = glm::inverse(uniform.uWorld);
-    uniform.uView = glm::lookAt(maxpos * 1.5f, float3(0, 0, 0), float3(0, 1, 0));
+    uniform.uView = glm::lookAt(maxpos, float3(0, 0, 0), float3(0, 1, 0));
     uniform.uInvView = glm::inverse(uniform.uView);
     float orthoSize = dist;
     uniform.uProjection = glm::ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, 0.1f, 1000.0f);
@@ -1194,6 +1194,9 @@ int main(int argc, char *argv[]) {
         bake_lightmaps(nullptr, gpu, nullptr, argv[1], 1024);
     } else {
         // bake_lightmaps(nullptr, gpu, nullptr, "assets/test1.glb", 1024);
+#ifdef WIN32
+        ShowWindow(GetConsoleWindow(), SW_HIDE);
+#endif
         gui_main(gpu);
     }
 
