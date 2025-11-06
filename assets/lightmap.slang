@@ -213,7 +213,7 @@ bool ShadeDirectMesh(MeshObject mesh, float2 uv1, bool useRay, Ray originRay, in
                 ray.predicted_distance = d;
                 float accDist = 0;
                 // bounce this many rays minus one for the initial ray
-                for (uint j = 0; j < 2; j++)
+                for (uint j = 0; j < 3; j++)
                 {
                     RayHit hit = Trace(ray);
                     // Ray ray2 = CreateRay(targetPos, -ray.direction);
