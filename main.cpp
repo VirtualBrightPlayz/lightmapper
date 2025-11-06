@@ -378,12 +378,13 @@ void load_glb(std::string file, std::vector<MeshObject>& meshes, std::vector<Mes
             float4x4 t = glm::identity<float4x4>();
             float4x4 r = glm::identity<float4x4>();
             float4x4 s = glm::identity<float4x4>();
+            // float4x4 m = glm::identity<float4x4>();
             if (node.translation.size() == 3)
-                t = glm::translate(float4x4(), float3(node.translation[0], node.translation[1], node.translation[2]));
+                t = glm::translate(t, float3(node.translation[0], node.translation[1], node.translation[2]));
             if (node.rotation.size() == 4)
                 r = float4x4(glm::quat(node.rotation[0], node.rotation[1], node.rotation[2], node.rotation[3]));
             if (node.scale.size() == 3)
-                s = glm::scale(float4x4(), float3(node.scale[0], node.scale[1], node.scale[2]));
+                s = glm::scale(s, float3(node.scale[0], node.scale[1], node.scale[2]));
             float4x4 m = t * r * s;
             size_t meshIndex = 0;
             for (size_t j = 0; j < model.meshes.size(); j++) {
@@ -764,6 +765,27 @@ void render_preview(SDL_GPUDevice* gpu, SDL_GPUTexture* outputTexture, SDL_GPUTe
     if (meshes.size() == 0) {
         return;
     }
+
+    std::vector<uint32_t> indexed{};
+    for (size_t i = 0; i < meshes.size(); i++) {
+        uint32_t start = meshes[i].indices.x;
+        uint32_t count = meshes[i].indices.y;
+        for (size_t j = start; j < start + count; j++) {
+            uint32_t index = inds[j].x;
+            auto found = std::find(indexed.begin(), indexed.end(), index);
+            if (found != indexed.end()) {
+                continue;
+            }
+            indexed.push_back(index);
+            MeshVertex vert = verts[index];
+            vert.position.w = 1;
+            vert.position = meshes[i].model * vert.position;
+            vert.normal.w = 0;
+            vert.normal = vert.normal * meshes[i].invModel;
+            verts[index] = vert;
+        }
+    }
+
     AABB aabb{};
     for (size_t i = 0; i < verts.size(); i++) {
         aabb.min_pos = glm::min(aabb.min_pos, verts[i].position);
