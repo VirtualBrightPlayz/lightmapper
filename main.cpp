@@ -1052,7 +1052,7 @@ bool gui_main(SDL_GPUDevice* gpu) {
                 ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
                 ImGui::Begin("Bake Config", &bakePopupOpen, ImGuiWindowFlags_AlwaysAutoResize);
                 int samples = config.sampleCount;
-                ImGui::SliderInt("Sample Count", &samples, 1, 512);
+                ImGui::SliderInt("Sample Count", &samples, 1, 128);
                 config.sampleCount = samples;
                 ImGui::Combo("Lightmap Texture Size", &texSizeSelection, texSizeItems, IM_ARRAYSIZE(texSizeItems));
                 config.textureSize = texSizeValues[texSizeSelection];
