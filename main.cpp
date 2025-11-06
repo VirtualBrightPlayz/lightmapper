@@ -50,6 +50,7 @@ struct BakeThreadConfig {
     SDL_GPUDevice* gpu;
     std::string filePath;
     uint16_t textureSize;
+    uint32_t sampleCount;
     BakedLightmapData output;
 };
 
@@ -419,7 +420,7 @@ void load_glb(std::string file, std::vector<MeshObject>& meshes, std::vector<Mes
     }
 }
 
-bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldCancelFunc)(), const std::string glbPath, const uint16_t texSize, const uint32_t seed = 0, const uint32_t samples = 16) {
+bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldCancelFunc)(), const std::string glbPath, const uint16_t texSize, const uint32_t seed = 0, const uint32_t samples = 4) {
     progress_reset();
     const uint16_t w = texSize;
     const uint16_t h = w;
@@ -899,7 +900,7 @@ bool bake_thread_should_stop() {
 
 int bake_thread(void* userdata) {
     BakeThreadConfig* config = (BakeThreadConfig*)userdata;
-    if (bake_lightmaps(&config->output, config->gpu, bake_thread_should_stop, config->filePath, config->textureSize)) {
+    if (bake_lightmaps(&config->output, config->gpu, bake_thread_should_stop, config->filePath, config->textureSize, 0, config->sampleCount)) {
         return EXIT_SUCCESS;
     } else {
         return EXIT_FAILURE;
@@ -934,6 +935,14 @@ bool gui_main(SDL_GPUDevice* gpu) {
 
     std::string filepath = "";
     BakeThreadConfig config = {};
+    config.textureSize = 1024;
+    config.sampleCount = 4;
+    int texSizeSelection = 0;
+    const char* texSizeItems[] = {"256", "512", "1024", "2048", "4096"};
+    uint32_t texSizeValues[] = {256, 512, 1024, 2048, 4096};
+    bool bakePopupOpen = false;
+    bool previewPopupOpen = false;
+
     SDL_Thread* thread = nullptr;
     SDL_GPUTexture* colorTex = nullptr;
     int32_t colorTexWidth = 0;
@@ -971,6 +980,7 @@ bool gui_main(SDL_GPUDevice* gpu) {
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
 
+        bool imgui_skip_frame = false;
         {
             ImGuiViewport* vp = ImGui::GetMainViewport();
 
@@ -981,19 +991,7 @@ bool gui_main(SDL_GPUDevice* gpu) {
                         SDL_ShowOpenFileDialog(file_select, &filepath, window, &filter, 1, nullptr, false);
                     }
                     if (ImGui::MenuItem("Bake")) {
-                        should_cancel_bake = true;
-                        if (thread != nullptr) {
-                            SDL_WaitThread(thread, nullptr);
-                            thread = nullptr;
-                        }
-                        should_cancel_bake = false;
-                        config.gpu = gpu;
-                        config.filePath = filepath;
-                        config.textureSize = 1024;
-                        thread = SDL_CreateThread(bake_thread, "Lightmap Bake Thread", &config);
-                        if (thread == nullptr) {
-                            // TODO: handle error
-                        }
+                        bakePopupOpen = true;
                     }
                     if (ImGui::MenuItem("Preview")) {
                         meshes.clear();
@@ -1013,6 +1011,7 @@ bool gui_main(SDL_GPUDevice* gpu) {
                             plotInds.push_back(inds[i].x);
                         }
                         render_preview(gpu, previewTex, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, filepath);
+                        previewPopupOpen = true;
                     }
                     ImGui::EndMenu();
                 }
@@ -1021,18 +1020,7 @@ bool gui_main(SDL_GPUDevice* gpu) {
 
             ImGui::SetNextWindowPos(vp->WorkPos);
             ImGui::SetNextWindowSize(vp->WorkSize);
-            ImGui::Begin("Logs", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
-            if (colorTex != nullptr) {
-                ImGui::Image(colorTex, ImVec2(512.0f, 512.0f));
-            }
-            if (dirTex != nullptr) {
-                if (colorTex != nullptr) {
-                    ImGui::SameLine();
-                }
-                ImGui::Image(dirTex, ImVec2(512.0f, 512.0f));
-            }
-
-            ImGui::Image(previewTex, ImVec2(512.0f, 512.0f));
+            ImGui::Begin("Logs", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
             for (size_t i = 0; i < logged_data.size(); i++) {
                 std::string logLine = logged_data.at(i);
                 ImGui::TextUnformatted(logLine.c_str());
@@ -1044,7 +1032,50 @@ bool gui_main(SDL_GPUDevice* gpu) {
             }
 
             ImVec2 center = vp->GetCenter();
-            ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+
+            if (previewPopupOpen) {
+                ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+                ImGui::Begin("Preview", &previewPopupOpen);
+
+                ImGui::Image(previewTex, ImVec2(512.0f, 512.0f));
+                if (colorTex != nullptr) {
+                    ImGui::Image(colorTex, ImVec2(512.0f, 512.0f));
+                }
+                if (dirTex != nullptr) {
+                    ImGui::Image(dirTex, ImVec2(512.0f, 512.0f));
+                }
+
+                ImGui::End();
+            }
+
+            if (bakePopupOpen) {
+                ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+                ImGui::Begin("Bake Config", &bakePopupOpen, ImGuiWindowFlags_AlwaysAutoResize);
+                int samples = config.sampleCount;
+                ImGui::SliderInt("Sample Count", &samples, 1, 512);
+                config.sampleCount = samples;
+                ImGui::Combo("Lightmap Texture Size", &texSizeSelection, texSizeItems, IM_ARRAYSIZE(texSizeItems));
+                config.textureSize = texSizeValues[texSizeSelection];
+                if (ImGui::Button("Bake Lightmaps")) {
+                    ImGui::CloseCurrentPopup();
+                    // start bake
+                    should_cancel_bake = true;
+                    if (thread != nullptr) {
+                        SDL_WaitThread(thread, nullptr);
+                        thread = nullptr;
+                    }
+                    should_cancel_bake = false;
+                    config.gpu = gpu;
+                    config.filePath = filepath;
+                    thread = SDL_CreateThread(bake_thread, "Lightmap Bake Thread", &config);
+                    if (thread == nullptr) {
+                        // TODO: handle error
+                    }
+                }
+                ImGui::End();
+            }
+
+            ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
             if (ImGui::BeginPopupModal("Progress", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
                 ImGui::Text("Please wait...");
                 ImGui::ProgressBar(last_progress_value / 100.0f);
@@ -1064,12 +1095,18 @@ bool gui_main(SDL_GPUDevice* gpu) {
                     colorTex = load_texture(gpu, (basepath + "color.png").c_str());
                     dirTex = load_texture(gpu, (basepath + "dir.png").c_str());
                     render_preview(gpu, previewTex, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, filepath);
+                    previewPopupOpen = true;
+                    imgui_skip_frame = true;
                 }
                 ImGui::EndPopup();
             }
         }
 
         ImGui::Render();
+
+        if (imgui_skip_frame) {
+            continue;
+        }
         
         SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(gpu);
         SDL_GPUTexture* swapchainTexture = nullptr;

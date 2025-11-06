@@ -199,15 +199,18 @@ bool ShadeDirectMesh(MeshObject mesh, float2 uv1, bool useRay, Ray originRay, in
         // texture lights
         if (Params[0].inSeed.y != 0)
         {
-            ray.direction = SampleHemisphere(ray.direction, 1.0);
-            RayHit hit = Trace(ray);
-            result.xyz += colorTex[uint2(hit.uv1 * sizeOut)].xyz;
-            result.w += 1.0;
-            normal.xyz = (normal.xyz + normalize(ray.direction));
-            if (hit.dist != float.maxValue)
+            for (uint k = 0; k < 6; k++)
             {
-                float attn = 1.0 / hit.dist;
-                normal.w = (normal.w + attn);// 2.0;
+                ray.direction = SampleHemisphere(wnorm, 1.0);
+                RayHit hit = Trace(ray);
+                if (hit.dist != float.maxValue)
+                {
+                    result.xyz += colorTex[uint2(hit.uv1 * sizeOut)].xyz;
+                    result.w += 1.0;
+                    normal.xyz = (normal.xyz + normalize(ray.direction));
+                    float attn = 1.0 / hit.dist;
+                    normal.w = (normal.w + attn);
+                }
             }
             continue;
         }
