@@ -89,8 +89,12 @@ add_custom_command(
     COMMAND $<TARGET_FILE:incbin> ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp -o ${CMAKE_CURRENT_BINARY_DIR}/data.c
 )
 
-add_executable(lightmap main.cpp ${CMAKE_CURRENT_BINARY_DIR}/data.c)
+add_executable(lightmap WIN32 main.cpp ${CMAKE_CURRENT_BINARY_DIR}/data.c)
 target_compile_definitions(lightmap PUBLIC VK_NO_PROTOTYPES)
 target_sources(lightmap PUBLIC ${SRCS})
 target_include_directories(lightmap PUBLIC src/ glm SDL3::Headers imgui implot3d incbin)
 target_link_libraries(lightmap PUBLIC glm SDL3::SDL3-shared imgui implot3d)
+if (WIN32)
+    set(SUBSYSTEM_LINKER_OPTIONS "/ENTRY:mainCRTStartup")
+    target_link_options(lightmap PRIVATE ${SUBSYSTEM_LINKER_OPTIONS})
+endif()
