@@ -350,5 +350,9 @@ void main(uint3 id : SV_DispatchThreadID)
             else
                 outTex[uv] = outTex[uv] + (result / (Params[0].inSeed.y + 1));
         }
+        else if (Params[0].inSeed.y == 0)
+        {
+            outTex[uv] = float4(0);
+        }
     }
 }
