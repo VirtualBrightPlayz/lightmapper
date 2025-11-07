@@ -403,9 +403,14 @@ void load_glb(std::string file, std::vector<MeshObject>& meshes, std::vector<Mes
         if (node.light != -1) {
             tinygltf::Light mdlLight = model.lights[node.light];
             PointLightObject light{};
-            light.color.r = (float)mdlLight.color[0];
-            light.color.g = (float)mdlLight.color[1];
-            light.color.b = (float)mdlLight.color[2];
+            light.color.r = 1.0f;
+            light.color.g = 1.0f;
+            light.color.b = 1.0f;
+            if (mdlLight.color.size() == 3) {
+                light.color.r = (float)mdlLight.color[0];
+                light.color.g = (float)mdlLight.color[1];
+                light.color.b = (float)mdlLight.color[2];
+            }
             light.color.a = (float)mdlLight.intensity;
             if (node.translation.size() == 3) {
                 light.position.x = (float)node.translation[0];
@@ -1191,7 +1196,7 @@ int main(int argc, char *argv[]) {
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Selected GPU API: %s", SDL_GetGPUDeviceDriver(gpu));
 
     if (argc > 1) {
-        bake_lightmaps(nullptr, gpu, nullptr, argv[1], 1024);
+        bake_lightmaps(nullptr, gpu, nullptr, argv[1], 1024, 0, 4);
     } else {
         // bake_lightmaps(nullptr, gpu, nullptr, "assets/test1.glb", 1024);
 #ifdef WIN32
