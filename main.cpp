@@ -430,7 +430,7 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
     progress_reset();
     const uint16_t w = texSize;
     const uint16_t h = w;
-    const uint16_t calcWidth = 128;
+    const uint16_t calcWidth = 64;
 
     bool result = true;
     if (data != nullptr) {
@@ -548,6 +548,19 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
                     size_t count = w * h * 2 * samples;
                     for (size_t k = 0; k < 2; k++) {
                         for (uint32_t sample = 0; sample < samples; sample++) {
+                            SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(gpu);
+                            // texture copy
+                            SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(cmdbuf);
+                            SDL_GPUTextureLocation srcLocation{};
+                            srcLocation.texture = k == 0 ? colorTexture : dirTexture;
+                            SDL_GPUTextureLocation dstLocation{};
+                            dstLocation.texture = texture;
+                            SDL_CopyGPUTextureToTexture(copyPass, &srcLocation, &dstLocation, w, h, 1, true);
+                            SDL_EndGPUCopyPass(copyPass);
+                            SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdbuf);
+                            SDL_WaitForGPUFences(gpu, true, &fence, 1);
+                            SDL_ReleaseGPUFence(gpu, fence);
+                            // render texture in chunks
                             for (size_t i = 0; i < w; i+=calcWidth) {
                                 for (size_t j = 0; j < h; j+=calcWidth) {
                                     report_progress((int)((float)(k * w * h * samples + sample * w * h + i * w + j) / (float)count * 100.0f));
@@ -562,18 +575,9 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
                                         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPU command buffer acquisition failed: %s", SDL_GetError());
                                         result = false;
                                     } else {
-                                        // texture copy
-                                        SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(cmdbuf);
-                                        SDL_GPUTextureLocation srcLocation{};
-                                        srcLocation.texture = k == 0 ? colorTexture : dirTexture;
-                                        SDL_GPUTextureLocation dstLocation{};
-                                        dstLocation.texture = texture;
-                                        SDL_CopyGPUTextureToTexture(copyPass, &srcLocation, &dstLocation, w, h, 1, true);
-                                        SDL_EndGPUCopyPass(copyPass);
                                         // compute pass
-                                        SDL_GPUStorageTextureReadWriteBinding binding[1] = {
+                                        SDL_GPUStorageTextureReadWriteBinding binding[] = {
                                             SDL_GPUStorageTextureReadWriteBinding{k == 0 ? colorTexture : dirTexture},
-                                            // SDL_GPUStorageTextureReadWriteBinding{texture}
                                         };
                                         SDL_GPUBuffer* bufferBindings[] = {paramsBuffer, meshesBuffer, vertsBuffer, indsBuffer, lightsBuffer};
                                         SDL_GPUComputePass* computePass = SDL_BeginGPUComputePass(cmdbuf, binding, 1, nullptr, 0);

@@ -9,15 +9,15 @@ struct BVHNode
     float4 index;
 }
 
-bool CheckAABB(Ray ray, float3 dir_inv, AABB aabb)
+bool CheckAABB(float3 origin, float3 dir_inv, AABB aabb)
 {
     float tmin = 0.0;
     float tmax = float.maxValue;
 
     for (int i = 0; i < 3; i++)
     {
-        float t1 = (aabb.min_pos[i] - ray.origin[i]) * dir_inv[i];
-        float t2 = (aabb.max_pos[i] - ray.origin[i]) * dir_inv[i];
+        float t1 = (aabb.min_pos[i] - origin[i]) * dir_inv[i];
+        float t2 = (aabb.max_pos[i] - origin[i]) * dir_inv[i];
 
         tmin = max(tmin, min(min(t1, t2), tmax));
         tmax = min(tmax, max(max(t1, t2), tmin));
@@ -57,8 +57,9 @@ bool IntersectTriangle_MT97(Ray ray, float3 vert0, float3 vert1, float3 vert2, i
 
 void IntersectMeshObject(Ray ray, inout RayHit bestHit, MeshObject mesh, float4 color, IArray<MeshVertex> meshVertices, IArray<uint4> meshIndices)
 {
+    float3 origin = mul(mesh.model, float4(ray.origin.xyz, 1)).xyz;
     float3 dir = mul(float4(ray.direction.xyz, 0), mesh.invModel).xyz;
-    if (!CheckAABB(ray, 1.0 / dir, mesh.aabb))
+    if (!CheckAABB(origin, 1.0 / dir, mesh.aabb))
         // if ((CheckAABB(ray, 1.0 / ray.direction.xyz, mesh.aabb) && !(mesh.aabb.max_pos.x > ray.origin.x && mesh.aabb.min_pos.x < ray.origin.x && mesh.aabb.max_pos.y > ray.origin.y && mesh.aabb.min_pos.y < ray.origin.y && mesh.aabb.max_pos.z > ray.origin.z && mesh.aabb.min_pos.z < ray.origin.z)))
         return;
 
