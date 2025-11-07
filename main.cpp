@@ -406,7 +406,7 @@ void load_glb(std::string file, std::vector<MeshObject>& meshes, std::vector<Mes
             light.color.r = (float)mdlLight.color[0];
             light.color.g = (float)mdlLight.color[1];
             light.color.b = (float)mdlLight.color[2];
-            light.color.a = (float)mdlLight.intensity / 1000; // 1000 lumens = 1 intensity?
+            light.color.a = (float)mdlLight.intensity;
             if (node.translation.size() == 3) {
                 light.position.x = (float)node.translation[0];
                 light.position.y = (float)node.translation[1];
