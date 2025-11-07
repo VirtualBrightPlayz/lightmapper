@@ -161,7 +161,6 @@ bool ShadeDirectMesh(MeshObject mesh, float2 uv1, bool useRay, Ray originRay, in
     outTex.GetDimensions(sizeOut.x, sizeOut.y);
     float2 halfPixel = 0.5 / sizeOut;
     float2 halfPixel2 = 0.25 / sizeOut;
-    halfPixel2 = float2(0.0);
     uint offset = uint(mesh.indices.x);
     uint count = offset + uint(mesh.indices.y);
     float4 normal = float4(0);
