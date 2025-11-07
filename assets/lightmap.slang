@@ -356,6 +356,10 @@ void main(uint3 id : SV_DispatchThreadID)
     outTex.GetDimensions(sizeOut.x, sizeOut.y);
     uint2 uv = Params[0].offsetPixels.xy + id.xy;
     float2 uv1 = (uv + 0.5) / float2(sizeOut);
+    if (Params[0].inSeed.y == 0)
+    {
+        outTex[uv] = float4(0);
+    }
     for (int i = 0; i < Meshes.getCount(); i++)
     {
         if (Meshes[i].indices.z < 1)
@@ -375,10 +379,6 @@ void main(uint3 id : SV_DispatchThreadID)
             }
             else
                 outTex[uv] = outTex[uv] + (result / (Params[0].inSeed.y + 1));
-        }
-        else if (Params[0].inSeed.y == 0)
-        {
-            outTex[uv] = float4(0);
         }
     }
 }
