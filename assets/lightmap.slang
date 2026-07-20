@@ -177,7 +177,7 @@ bool ShadeDirectMesh(MeshObject mesh, float2 uv1, bool useRay, Ray originRay, in
         float minmax = distance(uvw, uvw2) + EPSILON;
         if (!(uvw.x >= -minmax && uvw.x <= 1 + minmax && uvw.y >= -minmax && uvw.y <= 1 + minmax && uvw.z >= -minmax && uvw.z <= 1 + minmax))
         {
-            continue;
+            // continue;
         }
         if (uv1.x < uvmin.x || uv1.x > uvmax.x || uv1.y < uvmin.y || uv1.y > uvmax.y)
         {
@@ -227,7 +227,7 @@ bool ShadeDirectMesh(MeshObject mesh, float2 uv1, bool useRay, Ray originRay, in
             }
             */
             // sample around us
-            for (uint k = 0; k < 8; k++)
+            for (uint k = 0; k < 1; k++)
             {
                 // ray.direction = normalize(Hemisphere(wnorm, (float)k / 8.0 * TAU, PI * 0.25));
                 ray.direction = normalize(SampleHemisphere(wnorm, 1.0));
@@ -381,7 +381,10 @@ void main(uint3 id : SV_DispatchThreadID)
                 outTex[uv] = float4(output * 0.5 + 0.5, inAttn + result.w / (Params[0].inSeed.y + 1));
             }
             else
+                // outTex[uv] = (outTex[uv] + (result / (Params[0].inSeed.y + 1))) / 2.0;
                 outTex[uv] = outTex[uv] + (result / (Params[0].inSeed.y + 1));
+                // outTex[uv] = outTex[uv] + result;
+                // outTex[uv] = (outTex[uv] + result) / 2.0;
         }
     }
 }

@@ -430,7 +430,7 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
     progress_reset();
     const uint16_t w = texSize;
     const uint16_t h = w;
-    const uint16_t calcWidth = 64;
+    const uint16_t calcWidth = 32;
 
     bool result = true;
     if (data != nullptr) {
