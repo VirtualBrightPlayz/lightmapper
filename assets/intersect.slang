@@ -5,8 +5,11 @@
 
 struct BVHNode
 {
-    AABB aabb;
-    float4 index;
+    float3 lmin; uint32_t left;
+    float3 lmax; uint32_t right;
+    float3 rmin; uint32_t triCount;
+    float3 rmax; uint32_t firstTri;
+    bool IsLeaf() { return triCount > 0; }
 }
 
 bool CheckAABB(float3 origin, float3 dir_inv, AABB aabb)
@@ -53,6 +56,85 @@ bool IntersectTriangle_MT97(Ray ray, float3 vert0, float3 vert1, float3 vert2, i
     t = dot(edge2, qvec) * inv_det;
 
     return true;
+}
+
+// This function is based off tiny_bvh's BVH_GPU impl.
+void IntersectVertsInds(Ray ray, inout float3 hitDUV, out uint32_t hitIdx, IArray<float4> verts, IArray<uint32_t> primIdx, IArray<BVHNode> bvhNodes)
+{
+    float3 hit = float3(float.maxValue, 0, 0);
+    hitIdx = uint32_t.maxValue;
+    uint32_t node = 0;
+    uint32_t stack[64];
+    uint32_t stackPtr = 0;
+    while (true)
+    {
+        const BVHNode n = bvhNodes[node];
+        const float3 lmin = n.lmin;
+        const float3 lmax = n.lmax;
+        const float3 rmin = n.rmin;
+        const float3 rmax = n.rmax;
+        const uint32_t triCount = n.triCount;
+        if (n.IsLeaf())
+        {
+            const uint32_t firstTri = n.firstTri;
+            for (uint32_t i = 0; i < triCount; i++)
+            {
+                const uint32_t triIdx = primIdx[firstTri + i].x;
+                const uint32_t v0 = triIdx * 3;
+                // const float4 edge1 = verts[v0 + 1] - verts[v0];
+                // const float4 edge2 = verts[v0 + 2] - verts[v0];
+                float t, u, v;
+                if (IntersectTriangle_MT97(ray, verts[v0].xyz, verts[v0 + 1].xyz, verts[v0 + 2].xyz, t, u, v))
+                {
+                    hit = float3(t, u, v);
+                    hitIdx = triIdx;
+                }
+            }
+            if (stackPtr == 0)
+                break;
+            node = stack[--stackPtr];
+            continue;
+        }
+        uint32_t left = n.left;
+        uint32_t right = n.right;
+        const float3 t1a = (lmin - ray.origin) * ray.direction;
+        const float3 t2a = (lmax - ray.origin) * ray.direction;
+        const float3 t1b = (rmin - ray.origin) * ray.direction;
+        const float3 t2b = (rmax - ray.origin) * ray.direction;
+        const float3 minta = min(t1a, t2a);
+        const float3 maxta = max(t1a, t2a);
+        const float3 mintb = min(t1b, t2b);
+        const float3 maxtb = max(t1b, t2b);
+        const float tmina = max(max(max(minta.x, minta.y), minta.z), 0);
+        const float tminb = max(max(max(mintb.x, mintb.y), mintb.z), 0);
+        const float tmaxa = min(min(min(maxta.x, maxta.y), maxta.z), hit.x);
+        const float tmaxb = min(min(min(maxtb.x, maxtb.y), maxtb.z), hit.x);
+        float dist1 = tmina > tmaxa ? float.maxValue : tmina;
+        float dist2 = tminb > tmaxb ? float.maxValue : tminb;
+        if (dist1 > dist2)
+        {
+            float h = dist1;
+            dist1 = dist2;
+            dist2 = h;
+            uint32_t t = left;
+            left = right;
+            right = t;
+        }
+        if (dist1 == float.maxValue)
+        {
+            if (stackPtr == 0)
+                break;
+            else
+                node = stack[--stackPtr];
+        }
+        else
+        {
+            node = left;
+            if (dist2 != float.maxValue)
+                stack[stackPtr++] = right;
+        }
+    }
+    hitDUV = hit;
 }
 
 void IntersectMeshObject(Ray ray, inout RayHit bestHit, MeshObject mesh, float4 color, IArray<MeshVertex> meshVertices, IArray<uint4> meshIndices)

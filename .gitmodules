@@ -16,3 +16,6 @@
 [submodule "incbin"]
 	path = incbin
 	url = git@github.com:graphitemaster/incbin.git
+[submodule "tinybvh"]
+	path = tinybvh
+	url = https://github.com/jbikker/tinybvh.git

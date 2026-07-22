@@ -39,6 +39,8 @@ INCBIN(BasicFragSPV, "assets/basic.frag.spv");
 #include <SDL3/SDL_thread.h>
 #include <SDL3/SDL_mutex.h>
 
+#define TINYBVH_IMPLEMENTATION
+#include "tiny_bvh.h"
 
 struct BakedLightmapData {
     uint32_t width;
@@ -109,7 +111,7 @@ SDL_GPUComputePipeline* create_pipeline(SDL_GPUDevice* gpu, size_t filesize, con
     createInfo.entrypoint = "main";
     createInfo.format = SDL_GPU_SHADERFORMAT_SPIRV;
     createInfo.num_readonly_storage_textures = 1;
-    createInfo.num_readonly_storage_buffers = 5;
+    createInfo.num_readonly_storage_buffers = 8;
     createInfo.num_readwrite_storage_textures = 1;
     createInfo.num_readwrite_storage_buffers = 0;
     createInfo.num_uniform_buffers = 0;
@@ -134,7 +136,7 @@ bool create_buffer(SDL_GPUDevice* gpu, size_t datasize, SDL_GPUBufferUsageFlags 
     return true;
 }
 
-bool upload_buffer(SDL_GPUDevice* gpu, SDL_GPUBuffer* buffer, size_t datasize, void* data) {
+bool upload_buffer(SDL_GPUDevice* gpu, SDL_GPUBuffer* buffer, size_t datasize, const void* data) {
     SDL_GPUTransferBufferCreateInfo transferCreateInfo{};
     transferCreateInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
     transferCreateInfo.size = (uint32_t)datasize;
@@ -426,6 +428,65 @@ void load_glb(std::string file, std::vector<MeshObject>& meshes, std::vector<Mes
     }
 }
 
+std::vector<tinybvh::bvhvec4> get_BVH_verts(const std::vector<MeshVertex>& verts, const std::vector<uint4>& inds, const std::vector<MeshObject>& meshes) {
+    std::vector<tinybvh::bvhvec4> bvh_verts{};
+    for (size_t j = 0; j < meshes.size(); j++) {
+        uint32_t offset = (uint32_t)meshes[j].indices.x;
+        uint32_t count = offset + (uint32_t)meshes[j].indices.y;
+        for (uint32_t i = offset; i < count; i++) {
+            uint32_t idx = inds[i].x;
+            float4 vert = meshes[j].model * float4(verts[idx].position[0], verts[idx].position[1], verts[idx].position[2], 1);
+            tinybvh::bvhvec4 vec{};
+            vec[0] = vert[0];
+            vec[1] = vert[1];
+            vec[2] = vert[2];
+            vec[3] = vert[3];
+            bvh_verts.push_back(vec);
+        }
+    }
+    return bvh_verts;
+}
+
+std::vector<MeshVertex> get_BVH_verts2(const std::vector<MeshVertex>& verts, const std::vector<uint4>& inds, const std::vector<MeshObject>& meshes) {
+    std::vector<MeshVertex> bvh_verts{};
+    for (size_t j = 0; j < meshes.size(); j++) {
+        uint32_t offset = (uint32_t)meshes[j].indices.x;
+        uint32_t count = offset + (uint32_t)meshes[j].indices.y;
+        for (uint32_t i = offset; i < count; i++) {
+            uint32_t idx = inds[i].x;
+            float4 vert = meshes[j].model * float4(verts[idx].position[0], verts[idx].position[1], verts[idx].position[2], 1);
+            float4 norm = float4(verts[idx].normal[0], verts[idx].normal[1], verts[idx].normal[2], 0) * meshes[j].invModel;
+            MeshVertex vec{};
+            vec.position = vert;
+            vec.normal = norm;
+            vec.uv01 = verts[idx].uv01;
+            bvh_verts.push_back(vec);
+        }
+    }
+    return bvh_verts;
+}
+
+std::vector<uint32_t> get_BVH_inds(const std::vector<uint4>& inds) {
+    std::vector<uint32_t> bvh_verts{};
+    for (size_t i = 0; i < inds.size(); i++) {
+        bvh_verts.push_back(inds[i][0]);
+    }
+    return bvh_verts;
+}
+
+std::vector<uint4> get_BVH_inds2(const std::vector<MeshVertex>& verts, const std::vector<uint4>& inds, const std::vector<MeshObject>& meshes) {
+    std::vector<uint4> bvh_verts{};
+    for (size_t j = 0; j < meshes.size(); j++) {
+        uint32_t offset = (uint32_t)meshes[j].indices.x;
+        uint32_t count = offset + (uint32_t)meshes[j].indices.y;
+        for (uint32_t i = offset; i < count; i++) {
+            uint32_t idx = inds[i].x;
+            bvh_verts.push_back(uint4(idx));
+        }
+    }
+    return bvh_verts;
+}
+
 bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldCancelFunc)(), const std::string glbPath, const uint16_t texSize, const uint32_t seed = 0, const uint32_t samples = 4) {
     progress_reset();
     const uint16_t w = texSize;
@@ -457,6 +518,13 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
         return result;
     }
 
+    std::vector<tinybvh::bvhvec4> bvh_verts = get_BVH_verts(verts, inds, meshes);
+    std::vector<MeshVertex> bvh_verts2 = get_BVH_verts2(verts, inds, meshes);
+    std::vector<uint32_t> bvh_inds = get_BVH_inds(inds);
+    std::vector<uint4> bvh_inds2 = get_BVH_inds2(verts, inds, meshes);
+    tinybvh::BVH_GPU bvh{};
+    bvh.BuildHQ(bvh_verts.data(), bvh_inds.data(), (uint32_t)bvh_inds.size() / 3);
+
     size_t filesize = gLightmapSPVSize;
     const uint8_t* lightmap = gLightmapSPVData;
     if (lightmap == nullptr) {
@@ -480,6 +548,10 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
             SDL_GPUBuffer* vertsBuffer = nullptr;
             SDL_GPUBuffer* indsBuffer = nullptr;
             SDL_GPUBuffer* lightsBuffer = nullptr;
+            SDL_GPUBuffer* bvhNodesBuffer = nullptr;
+            SDL_GPUBuffer* bvhVertsBuffer = nullptr;
+            SDL_GPUBuffer* bvhIndsBuffer = nullptr;
+            SDL_GPUBuffer* bvhIndsMappingBuffer = nullptr;
 
             create_buffer(gpu, sizeof(ParamsType), SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ, &paramsBuffer);
             upload_buffer(gpu, paramsBuffer, sizeof(ParamsType), &params);
@@ -495,6 +567,18 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
 
             create_buffer(gpu, sizeof(PointLightObject) * lights.size(), SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ, &lightsBuffer);
             upload_buffer(gpu, lightsBuffer, sizeof(PointLightObject) * lights.size(), lights.data());
+
+            create_buffer(gpu, sizeof(tinybvh::BVH_GPU::BVHNode) * bvh.usedNodes, SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ, &bvhNodesBuffer);
+            upload_buffer(gpu, bvhNodesBuffer, sizeof(PointLightObject) * bvh.usedNodes, bvh.bvhNode);
+
+            create_buffer(gpu, sizeof(float4) * 3 * bvh.triCount, SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ, &bvhVertsBuffer);
+            upload_buffer(gpu, bvhVertsBuffer, sizeof(float4) * 3 * bvh.triCount, bvh.bvh.verts.data);
+
+            create_buffer(gpu, sizeof(uint32_t) * bvh.idxCount, SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ, &bvhIndsBuffer);
+            upload_buffer(gpu, bvhIndsBuffer, sizeof(uint32_t) * bvh.idxCount, bvh.bvh.primIdx);
+
+            create_buffer(gpu, sizeof(uint4) * bvh_inds2.size(), SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ, &bvhIndsMappingBuffer);
+            upload_buffer(gpu, bvhIndsMappingBuffer, sizeof(uint4) * bvh_inds2.size(), bvh_inds2.data());
 
             SDL_GPUTextureCreateInfo textureCreateInfo{};
             textureCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
@@ -579,10 +663,10 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
                                         SDL_GPUStorageTextureReadWriteBinding binding[] = {
                                             SDL_GPUStorageTextureReadWriteBinding{k == 0 ? colorTexture : dirTexture},
                                         };
-                                        SDL_GPUBuffer* bufferBindings[] = {paramsBuffer, meshesBuffer, vertsBuffer, indsBuffer, lightsBuffer};
+                                        SDL_GPUBuffer* bufferBindings[] = {paramsBuffer, meshesBuffer, vertsBuffer, indsBuffer, lightsBuffer, bvhNodesBuffer, bvhVertsBuffer, bvhIndsBuffer};
                                         SDL_GPUComputePass* computePass = SDL_BeginGPUComputePass(cmdbuf, binding, 1, nullptr, 0);
                                         SDL_BindGPUComputeStorageTextures(computePass, 0, &texture, 1);
-                                        SDL_BindGPUComputeStorageBuffers(computePass, 0, bufferBindings, 5);
+                                        SDL_BindGPUComputeStorageBuffers(computePass, 0, bufferBindings, 8);
                                         SDL_BindGPUComputePipeline(computePass, pipeline);
                                         SDL_DispatchGPUCompute(computePass, calcWidth / 8, calcWidth / 8, 1);
                                         SDL_EndGPUComputePass(computePass);
@@ -673,6 +757,10 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
             SDL_ReleaseGPUBuffer(gpu, vertsBuffer);
             SDL_ReleaseGPUBuffer(gpu, indsBuffer);
             SDL_ReleaseGPUBuffer(gpu, lightsBuffer);
+            SDL_ReleaseGPUBuffer(gpu, bvhNodesBuffer);
+            SDL_ReleaseGPUBuffer(gpu, bvhVertsBuffer);
+            SDL_ReleaseGPUBuffer(gpu, bvhIndsBuffer);
+            SDL_ReleaseGPUBuffer(gpu, bvhIndsMappingBuffer);
 
             SDL_ReleaseGPUComputePipeline(gpu, pipeline);
         }
@@ -1200,7 +1288,7 @@ int main(int argc, char *argv[]) {
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Selected GPU API: %s", SDL_GetGPUDeviceDriver(gpu));
 
     if (argc > 1) {
-        bake_lightmaps(nullptr, gpu, nullptr, argv[1], 1024, 0, 4);
+        bake_lightmaps(nullptr, gpu, nullptr, argv[1], 1024, 0, 1);
     } else {
         // bake_lightmaps(nullptr, gpu, nullptr, "assets/test1.glb", 1024);
 #ifdef WIN32

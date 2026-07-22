@@ -9,6 +9,9 @@ layout(binding = 2, set = 0) StructuredBuffer<MeshObject> Meshes;
 layout(binding = 3, set = 0) StructuredBuffer<MeshVertex> Vertices;
 layout(binding = 4, set = 0) StructuredBuffer<uint4> Indices;
 layout(binding = 5, set = 0) StructuredBuffer<PointLightObject> PointLights;
+layout(binding = 6, set = 0) StructuredBuffer<BVHNode> BVHNodes;
+layout(binding = 7, set = 0) StructuredBuffer<float4> BVHVertices;
+layout(binding = 8, set = 0) StructuredBuffer<uint32_t> BVHIndices;
 
 static float seed = 0;
 static uint3 threadId = uint3(0);
@@ -87,10 +90,24 @@ Ray CreateRayFromTriangle(float4x4 model, float4x4 invModel, MeshVertex v0, Mesh
 
 RayHit Trace(Ray ray, float3 color, bool canShade)
 {
+    float3 hitDUV;
+    uint32_t hitIdx;
+    IntersectVertsInds(ray, hitDUV, hitIdx, BVHVertices, BVHIndices, BVHNodes);
+
     RayHit bestHit = CreateRayHit();
-    for (uint i = 0; i < Meshes.getCount(); i++)
+    if (hitDUV.x > 0 && hitDUV.x < bestHit.dist && hitIdx != uint32_t.maxValue)
     {
-        IntersectMeshObject(ray, bestHit, Meshes[i], float4(color, 0), Vertices, Indices);
+        const uint32_t v0 = hitIdx * 3;
+        const MeshVertex vertex0 = Vertices[v0];
+        const MeshVertex vertex1 = Vertices[v0 + 1];
+        const MeshVertex vertex2 = Vertices[v0 + 2];
+        const float w = 1 - hitDUV.y - hitDUV.z;
+        bestHit.dist = hitDUV.x;
+        bestHit.position = ray.origin + hitDUV.x * ray.direction;
+        bestHit.normal = normalize(hitDUV.y * vertex1.normal.xyz + hitDUV.z * vertex2.normal.xyz + w * vertex0.normal.xyz);
+        bestHit.albedo = float3(0.8);
+        bestHit.specular = float3(0.6);
+        bestHit.uv1 = hitDUV.y * vertex1.uv01.zw + hitDUV.z * vertex2.uv01.zw + w * vertex0.uv01.zw;
     }
     return bestHit;
 }
