@@ -60,7 +60,7 @@ bool IntersectTriangle_MT97(Ray ray, float3 vert0, float3 vert1, float3 vert2, i
 }
 
 // This function is based off tiny_bvh's BVH_GPU impl.
-void IntersectVertsInds(Ray ray, inout float3 hitDUV, out uint32_t hitIdx, IArray<float4> verts, IArray<uint32_t> primIdx, IArray<BVHNode> bvhNodes)
+void IntersectVertsInds(Ray ray, inout float3 hitDUV, out uint32_t hitIdx, IArray<MeshVertex> verts, IArray<uint32_t> primIdx, IArray<BVHNode> bvhNodes)
 {
     // const float3 rDirection = ray.direction;
     const float idkValue = 1e30f;
@@ -86,7 +86,7 @@ void IntersectVertsInds(Ray ray, inout float3 hitDUV, out uint32_t hitIdx, IArra
                 const uint32_t triIdx = primIdx[firstTri + i];
                 const uint32_t v0 = triIdx * 3;
                 float t, u, v;
-                if (IntersectTriangle_MT97(ray, verts[v0].xyz, verts[v0 + 1].xyz, verts[v0 + 2].xyz, t, u, v))
+                if (IntersectTriangle_MT97(ray, verts[v0].position.xyz, verts[v0 + 1].position.xyz, verts[v0 + 2].position.xyz, t, u, v))
                 {
                     if (t > 0 && t < hit.x)
                     {

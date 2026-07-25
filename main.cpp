@@ -579,8 +579,8 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
             create_buffer(gpu, sizeof(tinybvh::BVH_GPU::BVHNode) * bvh.usedNodes, SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ, &bvhNodesBuffer);
             upload_buffer(gpu, bvhNodesBuffer, sizeof(tinybvh::BVH_GPU::BVHNode) * bvh.usedNodes, bvh.bvhNode);
 
-            create_buffer(gpu, sizeof(float4) * 3 * bvh.triCount, SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ, &bvhVertsBuffer);
-            upload_buffer(gpu, bvhVertsBuffer, sizeof(float4) * 3 * bvh.triCount, bvh.bvh.verts.data);
+            create_buffer(gpu, sizeof(MeshVertex) * bvh_verts2.size(), SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ, &bvhVertsBuffer);
+            upload_buffer(gpu, bvhVertsBuffer, sizeof(MeshVertex) * bvh_verts2.size(), bvh_verts2.data());
 
             create_buffer(gpu, sizeof(uint32_t) * bvh.idxCount, SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ, &bvhIndsBuffer);
             upload_buffer(gpu, bvhIndsBuffer, sizeof(uint32_t) * bvh.idxCount, bvh.bvh.primIdx);
@@ -728,6 +728,8 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
                                 for (size_t l = 0; l < w * h * 4; l++) {
                                     float val = rgba32[l];
                                     // assert(val <= 1.0f);
+                                    if (k == 0)
+                                        val /= (val + 1.0f); // TODO: better tonemapping
                                     rgba8[l] = (uint8_t)(SDL_clamp(val, 0.0f, 1.0f) * 255.0f);
                                 }
                                 stbi_flip_vertically_on_write(0);
@@ -1063,7 +1065,7 @@ bool gui_main(SDL_GPUDevice* gpu) {
     std::string filepath = "";
     BakeThreadConfig config = {};
     config.textureSize = 1024;
-    config.sampleCount = 1;
+    config.sampleCount = 4;
     int texSizeSelection = 0;
     const char* texSizeItems[] = {"256", "512", "1024", "2048", "4096"};
     uint32_t texSizeValues[] = {256, 512, 1024, 2048, 4096};

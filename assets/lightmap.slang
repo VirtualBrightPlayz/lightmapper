@@ -10,7 +10,7 @@ layout(binding = 3, set = 0) StructuredBuffer<MeshVertex> Vertices;
 layout(binding = 4, set = 0) StructuredBuffer<uint4> Indices;
 layout(binding = 5, set = 0) StructuredBuffer<PointLightObject> PointLights;
 layout(binding = 6, set = 0) StructuredBuffer<BVHNode> BVHNodes;
-layout(binding = 7, set = 0) StructuredBuffer<float4> BVHVertices;
+layout(binding = 7, set = 0) StructuredBuffer<MeshVertex> BVHVertices;
 layout(binding = 8, set = 0) StructuredBuffer<uint32_t> BVHIndices;
 
 static float seed = 0;
@@ -106,9 +106,9 @@ RayHit Trace(Ray ray, float3 color, bool canShade)
     if (hitIdx != uint32_t.maxValue)
     {
         const uint32_t v0 = hitIdx * 3;
-        const MeshVertex vertex0 = Vertices[v0];
-        const MeshVertex vertex1 = Vertices[v0 + 1];
-        const MeshVertex vertex2 = Vertices[v0 + 2];
+        const MeshVertex vertex0 = BVHVertices[v0];
+        const MeshVertex vertex1 = BVHVertices[v0 + 1];
+        const MeshVertex vertex2 = BVHVertices[v0 + 2];
         const float w = 1 - hitDUV.y - hitDUV.z;
         bestHit.dist = hitDUV.x;
         bestHit.position = ray.origin + hitDUV.x * ray.direction;
@@ -136,11 +136,10 @@ bool Trace(Ray ray, inout RayHit bestHit)
     {
         bestHit = CreateRayHit();
         bestHit.dist = hitDUV.x;
-        return true;
         const uint32_t v0 = hitIdx * 3;
-        const MeshVertex vertex0 = Vertices[v0];
-        const MeshVertex vertex1 = Vertices[v0 + 1];
-        const MeshVertex vertex2 = Vertices[v0 + 2];
+        const MeshVertex vertex0 = BVHVertices[v0];
+        const MeshVertex vertex1 = BVHVertices[v0 + 1];
+        const MeshVertex vertex2 = BVHVertices[v0 + 2];
         const float w = 1 - hitDUV.y - hitDUV.z;
         bestHit.dist = hitDUV.x;
         bestHit.position = ray.origin + hitDUV.x * ray.direction;
@@ -480,9 +479,8 @@ void main(uint3 id : SV_DispatchThreadID)
     {
         outTex[uv] = float4(0);
     }
+    /*
     float4 result = TraceBVH(uv1);
-    outTex[uv] = result;
-    return;
     if (result.w > 0)
     {
         if (Params[0].inSeed.y == 0)
@@ -490,7 +488,8 @@ void main(uint3 id : SV_DispatchThreadID)
         else
             outTex[uv] = outTex[uv] + (result / (Params[0].inSeed.y + 1));
     }
-    /*
+    */
+    // /*
     for (int i = 0; i < Meshes.getCount(); i++)
     {
         if (Meshes[i].indices.z < 1)
@@ -515,5 +514,5 @@ void main(uint3 id : SV_DispatchThreadID)
                 // outTex[uv] = (outTex[uv] + result) / 2.0;
         }
     }
-    */
+    // */
 }
