@@ -466,10 +466,17 @@ std::vector<MeshVertex> get_BVH_verts2(const std::vector<MeshVertex>& verts, con
     return bvh_verts;
 }
 
-std::vector<uint32_t> get_BVH_inds(const std::vector<uint4>& inds) {
+std::vector<uint32_t> get_BVH_inds(const std::vector<MeshVertex>& verts, const std::vector<uint4>& inds, const std::vector<MeshObject>& meshes) {
     std::vector<uint32_t> bvh_verts{};
-    for (size_t i = 0; i < inds.size(); i++) {
-        bvh_verts.push_back(inds[i][0]);
+    uint32_t k = 0;
+    for (size_t j = 0; j < meshes.size(); j++) {
+        uint32_t offset = (uint32_t)meshes[j].indices.x;
+        uint32_t count = offset + (uint32_t)meshes[j].indices.y;
+        for (uint32_t i = offset; i < count; i++) {
+            uint32_t idx = inds[i].x;
+            // bvh_verts.push_back(idx);
+            bvh_verts.push_back(k++);
+        }
     }
     return bvh_verts;
 }
@@ -491,7 +498,7 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
     progress_reset();
     const uint16_t w = texSize;
     const uint16_t h = w;
-    const uint16_t calcWidth = 32;
+    const uint16_t calcWidth = 8;
 
     bool result = true;
     if (data != nullptr) {
@@ -520,10 +527,11 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
 
     std::vector<tinybvh::bvhvec4> bvh_verts = get_BVH_verts(verts, inds, meshes);
     std::vector<MeshVertex> bvh_verts2 = get_BVH_verts2(verts, inds, meshes);
-    std::vector<uint32_t> bvh_inds = get_BVH_inds(inds);
+    std::vector<uint32_t> bvh_inds = get_BVH_inds(verts, inds, meshes);
     std::vector<uint4> bvh_inds2 = get_BVH_inds2(verts, inds, meshes);
     tinybvh::BVH_GPU bvh{};
-    bvh.BuildHQ(bvh_verts.data(), bvh_inds.data(), (uint32_t)bvh_inds.size() / 3);
+    bvh.Build(bvh_verts.data(), (uint32_t)bvh_verts.size() / 3);
+    // bvh.Intersect();
 
     size_t filesize = gLightmapSPVSize;
     const uint8_t* lightmap = gLightmapSPVData;
@@ -1055,7 +1063,7 @@ bool gui_main(SDL_GPUDevice* gpu) {
     std::string filepath = "";
     BakeThreadConfig config = {};
     config.textureSize = 1024;
-    config.sampleCount = 4;
+    config.sampleCount = 1;
     int texSizeSelection = 0;
     const char* texSizeItems[] = {"256", "512", "1024", "2048", "4096"};
     uint32_t texSizeValues[] = {256, 512, 1024, 2048, 4096};

@@ -88,6 +88,14 @@ Ray CreateRayFromTriangle(float4x4 model, float4x4 invModel, MeshVertex v0, Mesh
     return ray;
 }
 
+Ray CreateRayFromTriangle(MeshVertex v0, MeshVertex v1, MeshVertex v2, float3 uvw)
+{
+    float3 pos = uvw.x * v0.position.xyz + uvw.y * v1.position.xyz + uvw.z * v2.position.xyz;
+    float3 nor = uvw.x * v0.normal.xyz + uvw.y * v1.normal.xyz + uvw.z * v2.normal.xyz;
+    Ray ray = CreateRay(pos, nor);
+    return ray;
+}
+
 RayHit Trace(Ray ray, float3 color, bool canShade)
 {
     float3 hitDUV;
@@ -95,7 +103,7 @@ RayHit Trace(Ray ray, float3 color, bool canShade)
     IntersectVertsInds(ray, hitDUV, hitIdx, BVHVertices, BVHIndices, BVHNodes);
 
     RayHit bestHit = CreateRayHit();
-    if (hitDUV.x > 0 && hitDUV.x < bestHit.dist && hitIdx != uint32_t.maxValue)
+    if (hitIdx != uint32_t.maxValue)
     {
         const uint32_t v0 = hitIdx * 3;
         const MeshVertex vertex0 = Vertices[v0];
@@ -115,6 +123,34 @@ RayHit Trace(Ray ray, float3 color, bool canShade)
 RayHit Trace(Ray ray)
 {
     return Trace(ray, float3(0), false);
+}
+
+bool Trace(Ray ray, inout RayHit bestHit)
+{
+    float3 hitDUV;
+    uint32_t hitIdx = uint32_t.maxValue;
+    IntersectVertsInds(ray, hitDUV, hitIdx, BVHVertices, BVHIndices, BVHNodes);
+
+    if (hitIdx != uint32_t.maxValue)
+    // if (hitDUV.x != float.maxValue)
+    {
+        bestHit = CreateRayHit();
+        bestHit.dist = hitDUV.x;
+        return true;
+        const uint32_t v0 = hitIdx * 3;
+        const MeshVertex vertex0 = Vertices[v0];
+        const MeshVertex vertex1 = Vertices[v0 + 1];
+        const MeshVertex vertex2 = Vertices[v0 + 2];
+        const float w = 1 - hitDUV.y - hitDUV.z;
+        bestHit.dist = hitDUV.x;
+        bestHit.position = ray.origin + hitDUV.x * ray.direction;
+        bestHit.normal = normalize(hitDUV.y * vertex1.normal.xyz + hitDUV.z * vertex2.normal.xyz + w * vertex0.normal.xyz);
+        bestHit.albedo = float3(0.8);
+        bestHit.specular = float3(0.6);
+        bestHit.uv1 = hitDUV.y * vertex1.uv01.zw + hitDUV.z * vertex2.uv01.zw + w * vertex0.uv01.zw;
+        return true;
+    }
+    return false;
 }
 
 float2 roundUV(float2 uv)
@@ -366,6 +402,72 @@ float4 TraceMesh(MeshObject mesh, float2 uv1)
     return float4(0);
 }
 
+float4 TraceBVH(float2 uv1)
+{
+    int2 sizeOut;
+    outTex.GetDimensions(sizeOut.x, sizeOut.y);
+    const float2 halfPixel = 0.5 / sizeOut;
+    float4 output = float4(0);
+    for (uint32_t i = 0; i < Indices.getCount(); i+=3)
+    {
+        const MeshVertex v0 = Vertices[Indices[i + 0].x];
+        const MeshVertex v1 = Vertices[Indices[i + 1].x];
+        const MeshVertex v2 = Vertices[Indices[i + 2].x];
+        const float3 uvw = GetBarycentric((v0.uv01.zw), (v1.uv01.zw), (v2.uv01.zw), (uv1));
+        const float2 uvmax = max(max(v0.uv01.zw, v1.uv01.zw), v2.uv01.zw) + halfPixel;
+        const float2 uvmin = min(min(v0.uv01.zw, v1.uv01.zw), v2.uv01.zw) - halfPixel;
+        if (uvw.x < -EPSILON || uvw.x > 1 + EPSILON)
+        {
+            continue;
+        }
+        if (uvw.y < -EPSILON || uvw.y > 1 + EPSILON)
+        {
+            continue;
+        }
+        if (uvw.z < -EPSILON || uvw.z > 1 + EPSILON)
+        {
+            continue;
+        }
+        if (uv1.x < uvmin.x || uv1.x > uvmax.x || uv1.y < uvmin.y || uv1.y > uvmax.y)
+        {
+            continue;
+        }
+        // output += float4(uv1, 0, 1);
+        // continue;
+        Ray ray = CreateRayFromTriangle(v0, v1, v2, uvw);
+        const float3 wpos = ray.origin.xyz;
+        const float3 wnorm = ray.direction.xyz;
+        for (uint k = 0; k < PointLights.getCount(); k++)
+        {
+            ray.origin = PointLights[k].position.xyz; // + rng * (PointLights[k].data.x);
+            const float3 targetPos = wpos + wnorm * 0.001;
+            ray.direction = normalize(targetPos - ray.origin);
+            const float d = distance(ray.origin, targetPos);
+            ray.energy = PointLights[k].color.rgb * PointLights[k].color.a;
+            // ray.predicted_distance = d;
+            RayHit hit;
+            /*
+            for (uint l = 0; l < BVHNodes.getCount(); l++)
+            {
+                uint32_t hitIdx = asuint(BVHNodes[l].rmin.w);
+                if (hitIdx > 0)
+                {
+                    return float4((float)hitIdx / 14, 0, 0, 1);
+                }
+            }
+            */
+            if (Trace(ray, hit) && hit.dist < d)
+            {
+                continue;
+            }
+            output += atten2(PointLights[k].position, d);
+            output.a = 1.0f;
+        }
+        break;
+    }
+    return output;
+}
+
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void main(uint3 id : SV_DispatchThreadID)
@@ -380,6 +482,16 @@ void main(uint3 id : SV_DispatchThreadID)
     {
         outTex[uv] = float4(0);
     }
+    float4 result = TraceBVH(uv1);
+    if (result.w > 0)
+    {
+        if (Params[0].inSeed.y == 0)
+            outTex[uv] = result;
+        else
+            outTex[uv] = outTex[uv] + (result / (Params[0].inSeed.y + 1));
+    }
+    return;
+    /*
     for (int i = 0; i < Meshes.getCount(); i++)
     {
         if (Meshes[i].indices.z < 1)
@@ -404,4 +516,5 @@ void main(uint3 id : SV_DispatchThreadID)
                 // outTex[uv] = (outTex[uv] + result) / 2.0;
         }
     }
+    */
 }
