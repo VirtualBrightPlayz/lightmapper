@@ -407,7 +407,7 @@ float4 TraceBVH(float2 uv1)
     int2 sizeOut;
     outTex.GetDimensions(sizeOut.x, sizeOut.y);
     const float2 halfPixel = 0.5 / sizeOut;
-    float4 output = float4(0);
+    float4 result = float4(0);
     for (uint32_t i = 0; i < Indices.getCount(); i+=3)
     {
         const MeshVertex v0 = Vertices[Indices[i + 0].x];
@@ -437,6 +437,7 @@ float4 TraceBVH(float2 uv1)
         Ray ray = CreateRayFromTriangle(v0, v1, v2, uvw);
         const float3 wpos = ray.origin.xyz;
         const float3 wnorm = ray.direction.xyz;
+        float4 lighting = float4(0);
         for (uint k = 0; k < PointLights.getCount(); k++)
         {
             ray.origin = PointLights[k].position.xyz; // + rng * (PointLights[k].data.x);
@@ -446,26 +447,23 @@ float4 TraceBVH(float2 uv1)
             ray.energy = PointLights[k].color.rgb * PointLights[k].color.a;
             // ray.predicted_distance = d;
             RayHit hit;
-            /*
-            for (uint l = 0; l < BVHNodes.getCount(); l++)
-            {
-                uint32_t hitIdx = asuint(BVHNodes[l].rmin.w);
-                if (hitIdx > 0)
-                {
-                    return float4((float)hitIdx / 14, 0, 0, 1);
-                }
-            }
-            */
             if (Trace(ray, hit) && hit.dist < d)
             {
                 continue;
             }
-            output += atten2(PointLights[k].position, d);
-            output.a = 1.0f;
+            const float attn = atten2(PointLights[k].position, d);
+            lighting += float4(ray.energy * attn, attn);
+            // lighting += attn;
+            // result.a = 1.0f;
         }
-        break;
+        result += lighting;
     }
-    return output;
+    if (result.a != 0.0)
+    {
+        result = result / result.a;
+        result.a = 1.0;
+    }
+    return result;
 }
 
 [shader("compute")]
@@ -483,6 +481,8 @@ void main(uint3 id : SV_DispatchThreadID)
         outTex[uv] = float4(0);
     }
     float4 result = TraceBVH(uv1);
+    outTex[uv] = result;
+    return;
     if (result.w > 0)
     {
         if (Params[0].inSeed.y == 0)
@@ -490,7 +490,6 @@ void main(uint3 id : SV_DispatchThreadID)
         else
             outTex[uv] = outTex[uv] + (result / (Params[0].inSeed.y + 1));
     }
-    return;
     /*
     for (int i = 0; i < Meshes.getCount(); i++)
     {

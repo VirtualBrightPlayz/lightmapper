@@ -62,11 +62,11 @@ bool IntersectTriangle_MT97(Ray ray, float3 vert0, float3 vert1, float3 vert2, i
 // This function is based off tiny_bvh's BVH_GPU impl.
 void IntersectVertsInds(Ray ray, inout float3 hitDUV, out uint32_t hitIdx, IArray<float4> verts, IArray<uint32_t> primIdx, IArray<BVHNode> bvhNodes)
 {
-    const float3 rDirection = float3(1.0f / ray.direction.x, 1.0f / ray.direction.y, 1.0f / ray.direction.z);
     // const float3 rDirection = ray.direction;
     const float idkValue = 1e30f;
     float3 hit = float3(idkValue, 0, 0);
     hitIdx = uint32_t.maxValue;
+    const float3 rDirection = float3(1.0f / ray.direction.x, 1.0f / ray.direction.y, 1.0f / ray.direction.z);
     uint32_t node = 0;
     uint32_t stack[64];
     uint32_t stackPtr = 0;
@@ -77,11 +77,8 @@ void IntersectVertsInds(Ray ray, inout float3 hitDUV, out uint32_t hitIdx, IArra
         const float3 lmax = n.lmax.xyz;
         const float3 rmin = n.rmin.xyz;
         const float3 rmax = n.rmax.xyz;
-        const uint32_t triCount = asuint(n.rmin.w);
-        const uint32_t firstTri = asuint(n.rmax.w);
-        // const uint32_t triCount = n.triCount;
-        // const uint32_t firstTri = n.firstTri;
-        // if (n.IsLeaf())
+        const uint32_t triCount = reinterpret<uint32_t>(n.rmin.w);
+        const uint32_t firstTri = reinterpret<uint32_t>(n.rmax.w);
         if (triCount > 0)
         {
             for (uint32_t i = 0; i < triCount; i++)
@@ -96,7 +93,6 @@ void IntersectVertsInds(Ray ray, inout float3 hitDUV, out uint32_t hitIdx, IArra
                         hit = float3(t, u, v);
                         hitIdx = triIdx;
                     }
-                    // break;
                 }
             }
             if (stackPtr == 0)
@@ -104,8 +100,8 @@ void IntersectVertsInds(Ray ray, inout float3 hitDUV, out uint32_t hitIdx, IArra
             node = stack[--stackPtr];
             continue;
         }
-        uint32_t left = asuint(n.lmin.w);
-        uint32_t right = asuint(n.lmax.w);
+        uint32_t left = reinterpret<uint32_t>(n.lmin.w);
+        uint32_t right = reinterpret<uint32_t>(n.lmax.w);
         const float3 t1a = (lmin.xyz - ray.origin) * rDirection;
         const float3 t2a = (lmax.xyz - ray.origin) * rDirection;
         const float3 t1b = (rmin.xyz - ray.origin) * rDirection;
@@ -131,7 +127,7 @@ void IntersectVertsInds(Ray ray, inout float3 hitDUV, out uint32_t hitIdx, IArra
             left = right;
             right = t;
         }
-        if (dist1 == idkValue || (tmina > tmaxa && !swapped) || (tminb > tmaxb && swapped))
+        if (dist1 == idkValue /*|| (tmina > tmaxa && !swapped) || (tminb > tmaxb && swapped)*/)
         {
             if (stackPtr == 0)
                 break;
