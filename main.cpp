@@ -738,12 +738,14 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
                                 {
                                     if (data != nullptr)
                                         memcpy(data->colorData, rgba8, w * h * 4);
+                                    stbi_write_hdr((basepath + "color.hdr").c_str(), w, h, 4, rgba32);
                                     stbi_write_png((basepath + "color.png").c_str(), w, h, 4, rgba8, w * 4);
                                 }
                                 else if (k == 1)
                                 {
                                     if (data != nullptr)
                                         memcpy(data->dirData, rgba8, w * h * 4);
+                                    stbi_write_hdr((basepath + "dir.hdr").c_str(), w, h, 4, rgba32);
                                     stbi_write_png((basepath + "dir.png").c_str(), w, h, 4, rgba8, w * 4);
                                 }
                                 else
@@ -1298,7 +1300,7 @@ int main(int argc, char *argv[]) {
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Selected GPU API: %s", SDL_GetGPUDeviceDriver(gpu));
 
     if (argc > 1) {
-        bake_lightmaps(nullptr, gpu, nullptr, argv[1], 1024, 0, 1);
+        bake_lightmaps(nullptr, gpu, nullptr, argv[1], 1024, 0, 4);
     } else {
         // bake_lightmaps(nullptr, gpu, nullptr, "assets/test1.glb", 1024);
 #ifdef WIN32
