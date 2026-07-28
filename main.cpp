@@ -42,6 +42,10 @@ INCBIN(BasicFragSPV, "assets/basic.frag.spv");
 #define TINYBVH_IMPLEMENTATION
 #include "tiny_bvh.h"
 
+#define NUM_SHADER_BINDINGS 5
+#define NUM_SHADER_THREADCOUNT 8
+#define NUM_DISPATCH_COUNT 32
+
 struct BakedLightmapData {
     uint32_t width;
     void* colorData;
@@ -111,12 +115,12 @@ SDL_GPUComputePipeline* create_pipeline(SDL_GPUDevice* gpu, size_t filesize, con
     createInfo.entrypoint = "main";
     createInfo.format = SDL_GPU_SHADERFORMAT_SPIRV;
     createInfo.num_readonly_storage_textures = 1;
-    createInfo.num_readonly_storage_buffers = 8;
+    createInfo.num_readonly_storage_buffers = NUM_SHADER_BINDINGS;
     createInfo.num_readwrite_storage_textures = 1;
     createInfo.num_readwrite_storage_buffers = 0;
     createInfo.num_uniform_buffers = 0;
-    createInfo.threadcount_x = 8;
-    createInfo.threadcount_y = 8;
+    createInfo.threadcount_x = NUM_SHADER_THREADCOUNT;
+    createInfo.threadcount_y = NUM_SHADER_THREADCOUNT;
     createInfo.threadcount_z = 1;
 
     SDL_GPUComputePipeline* pipeline = SDL_CreateGPUComputePipeline(gpu, &createInfo);
@@ -498,7 +502,7 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
     progress_reset();
     const uint16_t w = texSize;
     const uint16_t h = w;
-    const uint16_t calcWidth = 32;
+    const uint16_t calcWidth = NUM_DISPATCH_COUNT;
 
     bool result = true;
     if (data != nullptr) {
@@ -527,11 +531,8 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
 
     std::vector<tinybvh::bvhvec4> bvh_verts = get_BVH_verts(verts, inds, meshes);
     std::vector<MeshVertex> bvh_verts2 = get_BVH_verts2(verts, inds, meshes);
-    std::vector<uint32_t> bvh_inds = get_BVH_inds(verts, inds, meshes);
-    std::vector<uint4> bvh_inds2 = get_BVH_inds2(verts, inds, meshes);
     tinybvh::BVH_GPU bvh{};
     bvh.Build(bvh_verts.data(), (uint32_t)bvh_verts.size() / 3);
-    // bvh.Intersect();
 
     size_t filesize = gLightmapSPVSize;
     const uint8_t* lightmap = gLightmapSPVData;
@@ -552,26 +553,13 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
             params.offsetPixels = uint4(0);
 
             SDL_GPUBuffer* paramsBuffer = nullptr;
-            SDL_GPUBuffer* meshesBuffer = nullptr;
-            SDL_GPUBuffer* vertsBuffer = nullptr;
-            SDL_GPUBuffer* indsBuffer = nullptr;
             SDL_GPUBuffer* lightsBuffer = nullptr;
             SDL_GPUBuffer* bvhNodesBuffer = nullptr;
             SDL_GPUBuffer* bvhVertsBuffer = nullptr;
             SDL_GPUBuffer* bvhIndsBuffer = nullptr;
-            // SDL_GPUBuffer* bvhIndsMappingBuffer = nullptr;
 
             create_buffer(gpu, sizeof(ParamsType), SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ, &paramsBuffer);
             upload_buffer(gpu, paramsBuffer, sizeof(ParamsType), &params);
-
-            create_buffer(gpu, sizeof(MeshObject) * meshes.size(), SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ, &meshesBuffer);
-            upload_buffer(gpu, meshesBuffer, sizeof(MeshObject) * meshes.size(), meshes.data());
-
-            create_buffer(gpu, sizeof(MeshVertex) * verts.size(), SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ, &vertsBuffer);
-            upload_buffer(gpu, vertsBuffer, sizeof(MeshVertex) * verts.size(), verts.data());
-
-            create_buffer(gpu, sizeof(uint4) * inds.size(), SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ, &indsBuffer);
-            upload_buffer(gpu, indsBuffer, sizeof(uint4) * inds.size(), inds.data());
 
             create_buffer(gpu, sizeof(PointLightObject) * lights.size(), SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ, &lightsBuffer);
             upload_buffer(gpu, lightsBuffer, sizeof(PointLightObject) * lights.size(), lights.data());
@@ -584,9 +572,6 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
 
             create_buffer(gpu, sizeof(uint32_t) * bvh.idxCount, SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ, &bvhIndsBuffer);
             upload_buffer(gpu, bvhIndsBuffer, sizeof(uint32_t) * bvh.idxCount, bvh.bvh.primIdx);
-
-            // create_buffer(gpu, sizeof(uint4) * bvh_inds2.size(), SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ, &bvhIndsMappingBuffer);
-            // upload_buffer(gpu, bvhIndsMappingBuffer, sizeof(uint4) * bvh_inds2.size(), bvh_inds2.data());
 
             SDL_GPUTextureCreateInfo textureCreateInfo{};
             textureCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
@@ -671,12 +656,12 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
                                         SDL_GPUStorageTextureReadWriteBinding binding[] = {
                                             SDL_GPUStorageTextureReadWriteBinding{k == 0 ? colorTexture : dirTexture},
                                         };
-                                        SDL_GPUBuffer* bufferBindings[] = {paramsBuffer, meshesBuffer, vertsBuffer, indsBuffer, lightsBuffer, bvhNodesBuffer, bvhVertsBuffer, bvhIndsBuffer};
+                                        SDL_GPUBuffer* bufferBindings[] = {paramsBuffer, lightsBuffer, bvhNodesBuffer, bvhVertsBuffer, bvhIndsBuffer};
                                         SDL_GPUComputePass* computePass = SDL_BeginGPUComputePass(cmdbuf, binding, 1, nullptr, 0);
                                         SDL_BindGPUComputeStorageTextures(computePass, 0, &texture, 1);
-                                        SDL_BindGPUComputeStorageBuffers(computePass, 0, bufferBindings, 8);
+                                        SDL_BindGPUComputeStorageBuffers(computePass, 0, bufferBindings, NUM_SHADER_BINDINGS);
                                         SDL_BindGPUComputePipeline(computePass, pipeline);
-                                        SDL_DispatchGPUCompute(computePass, calcWidth / 8, calcWidth / 8, 1);
+                                        SDL_DispatchGPUCompute(computePass, calcWidth / NUM_SHADER_THREADCOUNT, calcWidth / NUM_SHADER_THREADCOUNT, 1);
                                         SDL_EndGPUComputePass(computePass);
                                         SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdbuf);
                                         if (fence == nullptr) {
@@ -765,14 +750,10 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
             }
 
             SDL_ReleaseGPUBuffer(gpu, paramsBuffer);
-            SDL_ReleaseGPUBuffer(gpu, meshesBuffer);
-            SDL_ReleaseGPUBuffer(gpu, vertsBuffer);
-            SDL_ReleaseGPUBuffer(gpu, indsBuffer);
             SDL_ReleaseGPUBuffer(gpu, lightsBuffer);
             SDL_ReleaseGPUBuffer(gpu, bvhNodesBuffer);
             SDL_ReleaseGPUBuffer(gpu, bvhVertsBuffer);
             SDL_ReleaseGPUBuffer(gpu, bvhIndsBuffer);
-            // SDL_ReleaseGPUBuffer(gpu, bvhIndsMappingBuffer);
 
             SDL_ReleaseGPUComputePipeline(gpu, pipeline);
         }
