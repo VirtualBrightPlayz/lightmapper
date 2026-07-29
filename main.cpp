@@ -499,6 +499,7 @@ std::vector<uint4> get_BVH_inds2(const std::vector<MeshVertex>& verts, const std
 }
 
 bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldCancelFunc)(), const std::string glbPath, const uint16_t texSize, const uint32_t seed = 0, const uint32_t samples = 4) {
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Baking lightmaps: size=%u, seed=%u, samples=%u, file=\"%s\"", texSize, seed, samples, glbPath.c_str());
     progress_reset();
     const uint16_t w = texSize;
     const uint16_t h = w;
@@ -1260,7 +1261,48 @@ void on_log(void* userdata, int category, SDL_LogPriority priority, const char* 
     logged_data.push_back(message);
 }
 
-int main(int argc, char *argv[]) {
+size_t try_get_arg(int argc, char* argv[], const char* flag) {
+    if (argc > 1) {
+        for (size_t i = 1; i < argc; i++) {
+            if (SDL_strcasecmp(argv[i], flag) == 0) {
+                return i;
+            }
+        }
+    }
+    return 0;
+}
+
+bool get_arg_value(int argc, char* argv[], const char* flag, char* buffer, size_t bufferSize) {
+    if (argc > 1) {
+        for (size_t i = 1; i < argc; i++) {
+            if (SDL_strcasecmp(argv[i], flag) == 0 && i + 1 < argc) {
+                SDL_strlcpy(buffer, argv[i + 1], bufferSize);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool get_arg_value_uint(int argc, char* argv[], const char* flag, uint32_t* buffer) {
+    if (argc > 1) {
+        for (size_t i = 1; i < argc; i++) {
+            if (SDL_strcasecmp(argv[i], flag) == 0 && i + 1 < argc) {
+                try {
+                    *buffer = std::stoul(argv[i + 1]);
+                    return true;
+                } catch (std::invalid_argument const&) {
+                    return false;
+                } catch (std::out_of_range const&) {
+                    return false;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+int main(int argc, char* argv[]) {
     if (!SDL_Init(SDL_INIT_EVENTS | SDL_INIT_VIDEO)) {
         return EXIT_FAILURE;
     }
@@ -1281,7 +1323,18 @@ int main(int argc, char *argv[]) {
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Selected GPU API: %s", SDL_GetGPUDeviceDriver(gpu));
 
     if (argc > 1) {
-        bake_lightmaps(nullptr, gpu, nullptr, argv[1], 1024, 0, 4);
+        uint32_t samples = 4;
+        uint32_t size = 1024;
+        uint32_t seed = 0;
+        char buffer[BUFSIZ];
+        get_arg_value_uint(argc, argv, "-samples", &samples);
+        get_arg_value_uint(argc, argv, "-size", &size);
+        get_arg_value_uint(argc, argv, "-seed", &seed);
+        if (get_arg_value(argc, argv, "-file", buffer, sizeof(buffer))) {
+            bake_lightmaps(nullptr, gpu, nullptr, buffer, (uint16_t)size, 0, samples);
+        } else {
+            bake_lightmaps(nullptr, gpu, nullptr, argv[argc - 1], (uint16_t)size, 0, samples);
+        }
     } else {
         // bake_lightmaps(nullptr, gpu, nullptr, "assets/test1.glb", 1024);
 #ifdef WIN32
