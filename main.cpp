@@ -44,7 +44,7 @@ INCBIN(BasicFragSPV, "assets/basic.frag.spv");
 
 #define NUM_SHADER_BINDINGS 5
 #define NUM_SHADER_THREADCOUNT 8
-#define NUM_DISPATCH_COUNT 8
+#define NUM_DISPATCH_COUNT 1024
 
 struct BakedLightmapData {
     uint32_t width;
@@ -653,14 +653,17 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
                 size_t hCalc = h / calcWidth;
                 size_t count = w * h * 2 * samples;
                 for (size_t k = 0; k < 2; k++) {
+
                     uint32_t lastSample = 0;
                     for (uint32_t sample = 0; sample < samples; sample++) {
                         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Sample %u/%u", sample + 1, samples);
-                        SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(gpu);
+
                         // render texture in chunks
                         for (size_t i = 0; i < w; i+=calcWidth) {
                             for (size_t j = 0; j < h; j+=calcWidth) {
                                 report_progress((int)((float)(k * w * h * samples + sample * w * h + i * w + j) / (float)count * 100.0f));
+                                SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(gpu);
+
                                 // copy pass
                                 params.inSeed.x = (float)(seed + sample);
                                 params.inSeed.y = (float)sample;
@@ -681,6 +684,16 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
                                 SDL_BindGPUComputePipeline(computePass, pipeline);
                                 SDL_DispatchGPUCompute(computePass, calcWidth / NUM_SHADER_THREADCOUNT, calcWidth / NUM_SHADER_THREADCOUNT, 1);
                                 SDL_EndGPUComputePass(computePass);
+
+                                SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdbuf);
+                                if (fence == nullptr) {
+                                    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPU command buffer submission failed: %s", SDL_GetError());
+                                    result = false;
+                                } else {
+                                    SDL_WaitForGPUFences(gpu, true, &fence, 1);
+                                    SDL_ReleaseGPUFence(gpu, fence);
+                                }
+
                                 if (shouldCancelFunc != nullptr && shouldCancelFunc()) {
                                     // k = 2;
                                     sample = samples;
@@ -689,19 +702,8 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
                                 }
                             }
                         }
-                        SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdbuf);
-                        if (fence == nullptr) {
-                            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPU command buffer submission failed: %s", SDL_GetError());
-                            result = false;
-                        } else {
-                            SDL_WaitForGPUFences(gpu, true, &fence, 1);
-                            SDL_ReleaseGPUFence(gpu, fence);
-                            if (shouldCancelFunc != nullptr && shouldCancelFunc()) {
-                                // k = 2;
-                                sample = samples;
-                            }
-                        }
                     }
+
                     SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(gpu);
                     if (cmdbuf == nullptr) {
                         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPU command buffer acquisition failed: %s", SDL_GetError());

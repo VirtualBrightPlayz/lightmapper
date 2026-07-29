@@ -318,7 +318,7 @@ void main(uint3 id : SV_DispatchThreadID)
     int2 sizeOut;
     outTex.GetDimensions(sizeOut.x, sizeOut.y);
     uint2 uv = Params[0].offsetPixels.xy + id.xy;
-    if (uv.x > sizeOut.x || uv.y > sizeOut.y)
+    if (uv.x >= sizeOut.x || uv.y >= sizeOut.y)
     {
         return;
     }
