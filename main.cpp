@@ -44,7 +44,7 @@ INCBIN(BasicFragSPV, "assets/basic.frag.spv");
 
 #define NUM_SHADER_BINDINGS 5
 #define NUM_SHADER_THREADCOUNT 8
-#define NUM_DISPATCH_COUNT 256
+#define NUM_DISPATCH_COUNT 64
 
 struct BakedLightmapData {
     uint32_t width;
