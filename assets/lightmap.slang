@@ -318,6 +318,10 @@ void main(uint3 id : SV_DispatchThreadID)
     int2 sizeOut;
     outTex.GetDimensions(sizeOut.x, sizeOut.y);
     uint2 uv = Params[0].offsetPixels.xy + id.xy;
+    if (uv.x > sizeOut.x || uv.y > sizeOut.y)
+    {
+        return;
+    }
     threadId = uv;
     float2 uv1 = (uv + 0.5) / float2(sizeOut);
     if (Params[0].inSeed.y == 0)
