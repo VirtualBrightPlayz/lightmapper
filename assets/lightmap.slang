@@ -14,7 +14,7 @@ layout(binding = 5, set = 0) StructuredBuffer<uint32_t> BVHIndices;
 layout(binding = 0, set = 1) RWTexture2D<float4> outTex;
 
 static float seed = 0;
-static uint3 threadId = uint3(0);
+static uint2 threadId = uint2(0);
 float rand()
 {
     float result = fract(sin(seed / 100.0 * dot(threadId.xy, float2(12.9898, 78.233))) * 43758.5453);
@@ -314,11 +314,11 @@ float4 TraceBVH(float2 uv1)
 [numthreads(8, 8, 1)]
 void main(uint3 id : SV_DispatchThreadID)
 {
-    threadId = id;
     seed = Params[0].inSeed.x;
     int2 sizeOut;
     outTex.GetDimensions(sizeOut.x, sizeOut.y);
     uint2 uv = Params[0].offsetPixels.xy + id.xy;
+    threadId = uv;
     float2 uv1 = (uv + 0.5) / float2(sizeOut);
     if (Params[0].inSeed.y == 0)
     {
