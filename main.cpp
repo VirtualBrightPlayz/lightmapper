@@ -108,6 +108,20 @@ uint8_t* malloc_file(const std::string path, size_t* filesize) {
     return filedata;
 }
 
+bool create_texture_hdr(SDL_GPUDevice* gpu, const uint32_t w, const uint32_t h, SDL_GPUTexture** textureOut) {
+    SDL_GPUTextureCreateInfo textureCreateInfo{};
+    textureCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
+    textureCreateInfo.format = SDL_GPU_TEXTUREFORMAT_R32G32B32A32_FLOAT;
+    textureCreateInfo.usage = SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_READ | SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE;
+    textureCreateInfo.width = w;
+    textureCreateInfo.height = h;
+    textureCreateInfo.layer_count_or_depth = 1;
+    textureCreateInfo.num_levels = 1;
+    SDL_GPUTexture* texture = SDL_CreateGPUTexture(gpu, &textureCreateInfo);
+    *textureOut = texture;
+    return texture != nullptr;
+}
+
 SDL_GPUComputePipeline* create_pipeline(SDL_GPUDevice* gpu, size_t filesize, const uint8_t* filedata) {
     SDL_GPUComputePipelineCreateInfo createInfo{};
     createInfo.code_size = filesize;
@@ -568,7 +582,7 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
     std::vector<tinybvh::bvhvec4> bvh_verts = get_BVH_verts(verts, inds, meshes);
     std::vector<MeshVertex> bvh_verts2 = get_BVH_verts2(verts, inds, meshes);
     tinybvh::BVH_GPU bvh{};
-    bvh.Build(bvh_verts.data(), (uint32_t)bvh_verts.size() / 3);
+    bvh.BuildHQ(bvh_verts.data(), (uint32_t)bvh_verts.size() / 3);
 
     size_t filesize = gLightmapSPVSize;
     const uint8_t* lightmap = gLightmapSPVData;
@@ -621,25 +635,13 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
             textureCreateInfo.num_levels = 1;
             SDL_GPUTexture* texture = SDL_CreateGPUTexture(gpu, &textureCreateInfo);
 
-            SDL_GPUTextureCreateInfo colorTextureCreateInfo{};
-            colorTextureCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
-            colorTextureCreateInfo.format = SDL_GPU_TEXTUREFORMAT_R32G32B32A32_FLOAT;
-            colorTextureCreateInfo.usage = SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_READ | SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE;
-            colorTextureCreateInfo.width = w;
-            colorTextureCreateInfo.height = h;
-            colorTextureCreateInfo.layer_count_or_depth = 1;
-            colorTextureCreateInfo.num_levels = 1;
-            SDL_GPUTexture* colorTexture = SDL_CreateGPUTexture(gpu, &colorTextureCreateInfo);
+            SDL_GPUTexture* colorTextures[] = {nullptr, nullptr};
+            create_texture_hdr(gpu, w, h, &colorTextures[0]);
+            create_texture_hdr(gpu, w, h, &colorTextures[1]);
 
-            SDL_GPUTextureCreateInfo dirTextureCreateInfo{};
-            dirTextureCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
-            dirTextureCreateInfo.format = SDL_GPU_TEXTUREFORMAT_R32G32B32A32_FLOAT;
-            dirTextureCreateInfo.usage = SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_READ | SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE;
-            dirTextureCreateInfo.width = w;
-            dirTextureCreateInfo.height = h;
-            dirTextureCreateInfo.layer_count_or_depth = 1;
-            dirTextureCreateInfo.num_levels = 1;
-            SDL_GPUTexture* dirTexture = SDL_CreateGPUTexture(gpu, &dirTextureCreateInfo);
+            SDL_GPUTexture* dirTextures[] = {nullptr, nullptr};
+            create_texture_hdr(gpu, w, h, &dirTextures[0]);
+            create_texture_hdr(gpu, w, h, &dirTextures[1]);
 
             if (texture == nullptr) {
                 SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPU texture creation failed: %s", SDL_GetError());
@@ -662,7 +664,9 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
                     size_t hCalc = h / calcWidth;
                     size_t count = w * h * 2 * samples;
                     for (size_t k = 0; k < 2; k++) {
+                        uint32_t lastSample = 0;
                         for (uint32_t sample = 0; sample < samples; sample++) {
+                            /*
                             SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(gpu);
                             // texture copy
                             SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(cmdbuf);
@@ -675,6 +679,7 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
                             SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdbuf);
                             SDL_WaitForGPUFences(gpu, true, &fence, 1);
                             SDL_ReleaseGPUFence(gpu, fence);
+                            */
                             // render texture in chunks
                             for (size_t i = 0; i < w; i+=calcWidth) {
                                 for (size_t j = 0; j < h; j+=calcWidth) {
@@ -693,15 +698,19 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
                                         upload_buffer_fast(gpu, cmdbuf, paramsBuffer, paramsTransfer, sizeof(ParamsType), &params);
                                         // compute pass
                                         SDL_GPUStorageTextureReadWriteBinding binding[] = {
-                                            SDL_GPUStorageTextureReadWriteBinding{k == 0 ? colorTexture : dirTexture},
+                                            SDL_GPUStorageTextureReadWriteBinding{k == 0 ? colorTextures[sample % 2] : dirTextures[sample % 2]},
                                         };
+                                        lastSample = sample % 2;
+                                        const uint32_t nextSample = (sample + 1) % 2;
                                         SDL_GPUBuffer* bufferBindings[] = {paramsBuffer, lightsBuffer, bvhNodesBuffer, bvhVertsBuffer, bvhIndsBuffer};
                                         SDL_GPUComputePass* computePass = SDL_BeginGPUComputePass(cmdbuf, binding, 1, nullptr, 0);
-                                        SDL_BindGPUComputeStorageTextures(computePass, 0, &texture, 1);
+                                        SDL_BindGPUComputeStorageTextures(computePass, 0, k == 0 ? &colorTextures[nextSample] : &dirTextures[nextSample], 1);
                                         SDL_BindGPUComputeStorageBuffers(computePass, 0, bufferBindings, NUM_SHADER_BINDINGS);
                                         SDL_BindGPUComputePipeline(computePass, pipeline);
                                         SDL_DispatchGPUCompute(computePass, calcWidth / NUM_SHADER_THREADCOUNT, calcWidth / NUM_SHADER_THREADCOUNT, 1);
                                         SDL_EndGPUComputePass(computePass);
+                                        // SDL_SubmitGPUCommandBuffer(cmdbuf);
+                                        // /*
                                         SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdbuf);
                                         if (fence == nullptr) {
                                             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPU command buffer submission failed: %s", SDL_GetError());
@@ -716,6 +725,15 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
                                                 j = h;
                                             }
                                         }
+                                        // */
+                                        /*
+                                        if (shouldCancelFunc != nullptr && shouldCancelFunc()) {
+                                            // k = 2;
+                                            sample = samples;
+                                            i = w;
+                                            j = h;
+                                        }
+                                        */
                                     }
                                 }
                             }
@@ -732,7 +750,7 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
                             // dstLocation.texture = outputTexture;
                             // SDL_CopyGPUTextureToTexture(copyPass, &srcLocation, &dstLocation, w, h, 1, true);
                             SDL_GPUTextureRegion sourceRegion{};
-                            sourceRegion.texture = k == 0 ? colorTexture : dirTexture;
+                            sourceRegion.texture = k == 0 ? colorTextures[lastSample] : dirTextures[lastSample];
                             sourceRegion.w = w;
                             sourceRegion.h = h;
                             sourceRegion.d = 1;
@@ -783,8 +801,10 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
                     }
                     SDL_ReleaseGPUTransferBuffer(gpu, transferBuffer);
                 }
-                SDL_ReleaseGPUTexture(gpu, dirTexture);
-                SDL_ReleaseGPUTexture(gpu, colorTexture);
+                SDL_ReleaseGPUTexture(gpu, dirTextures[0]);
+                SDL_ReleaseGPUTexture(gpu, dirTextures[1]);
+                SDL_ReleaseGPUTexture(gpu, colorTextures[0]);
+                SDL_ReleaseGPUTexture(gpu, colorTextures[1]);
                 SDL_ReleaseGPUTexture(gpu, texture);
             }
 
