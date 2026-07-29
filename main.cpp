@@ -140,6 +140,19 @@ bool create_buffer(SDL_GPUDevice* gpu, size_t datasize, SDL_GPUBufferUsageFlags 
     return true;
 }
 
+bool create_transfer_buffer(SDL_GPUDevice* gpu, size_t datasize, SDL_GPUTransferBuffer** bufferOut) {
+    SDL_GPUTransferBufferCreateInfo transferCreateInfo{};
+    transferCreateInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    transferCreateInfo.size = (uint32_t)datasize;
+    SDL_GPUTransferBuffer* transferBuffer = SDL_CreateGPUTransferBuffer(gpu, &transferCreateInfo);
+    if (transferBuffer == nullptr) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPU transfer buffer creation failed: %s", SDL_GetError());
+        return false;
+    }
+    *bufferOut = transferBuffer;
+    return true;
+}
+
 bool upload_buffer(SDL_GPUDevice* gpu, SDL_GPUBuffer* buffer, size_t datasize, const void* data) {
     SDL_GPUTransferBufferCreateInfo transferCreateInfo{};
     transferCreateInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
@@ -179,6 +192,28 @@ bool upload_buffer(SDL_GPUDevice* gpu, SDL_GPUBuffer* buffer, size_t datasize, c
     SDL_WaitForGPUFences(gpu, true, &fence, 1);
     SDL_ReleaseGPUFence(gpu, fence);
     SDL_ReleaseGPUTransferBuffer(gpu, transferBuffer);
+
+    return true;
+}
+
+bool upload_buffer_fast(SDL_GPUDevice* gpu, SDL_GPUCommandBuffer* cmdbuf, SDL_GPUBuffer* buffer, SDL_GPUTransferBuffer* transferBuffer, size_t datasize, const void* data) {
+    void* rawBufferData = SDL_MapGPUTransferBuffer(gpu, transferBuffer, true);
+    if (rawBufferData == nullptr) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPU transfer buffer mapping failed: %s", SDL_GetError());
+        return false;
+    }
+    SDL_memcpy(rawBufferData, data, datasize);
+    SDL_UnmapGPUTransferBuffer(gpu, transferBuffer);
+    SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(cmdbuf);
+    SDL_GPUTransferBufferLocation transferSrcInfo{};
+    transferSrcInfo.transfer_buffer = transferBuffer;
+    transferSrcInfo.offset = 0;
+    SDL_GPUBufferRegion destBufferInfo{};
+    destBufferInfo.buffer = buffer;
+    destBufferInfo.offset = 0;
+    destBufferInfo.size = (uint32_t)datasize;
+    SDL_UploadToGPUBuffer(copyPass, &transferSrcInfo, &destBufferInfo, true);
+    SDL_EndGPUCopyPass(copyPass);
     return true;
 }
 
@@ -554,12 +589,14 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
             params.offsetPixels = uint4(0);
 
             SDL_GPUBuffer* paramsBuffer = nullptr;
+            SDL_GPUTransferBuffer* paramsTransfer = nullptr;
             SDL_GPUBuffer* lightsBuffer = nullptr;
             SDL_GPUBuffer* bvhNodesBuffer = nullptr;
             SDL_GPUBuffer* bvhVertsBuffer = nullptr;
             SDL_GPUBuffer* bvhIndsBuffer = nullptr;
 
             create_buffer(gpu, sizeof(ParamsType), SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ, &paramsBuffer);
+            create_transfer_buffer(gpu, sizeof(ParamsType), &paramsTransfer);
             upload_buffer(gpu, paramsBuffer, sizeof(ParamsType), &params);
 
             create_buffer(gpu, sizeof(PointLightObject) * lights.size(), SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ, &lightsBuffer);
@@ -642,17 +679,18 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
                             for (size_t i = 0; i < w; i+=calcWidth) {
                                 for (size_t j = 0; j < h; j+=calcWidth) {
                                     report_progress((int)((float)(k * w * h * samples + sample * w * h + i * w + j) / (float)count * 100.0f));
-                                    params.inSeed.x = (float)(seed + sample);
-                                    params.inSeed.y = (float)sample;
-                                    params.offsetPixels.x = (uint32_t)i;
-                                    params.offsetPixels.y = (uint32_t)j;
-                                    params.offsetPixels.z = (uint32_t)k;
-                                    upload_buffer(gpu, paramsBuffer, sizeof(ParamsType), &params);
                                     SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(gpu);
                                     if (cmdbuf == nullptr) {
                                         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPU command buffer acquisition failed: %s", SDL_GetError());
                                         result = false;
                                     } else {
+                                        // copy pass
+                                        params.inSeed.x = (float)(seed + sample);
+                                        params.inSeed.y = (float)sample;
+                                        params.offsetPixels.x = (uint32_t)i;
+                                        params.offsetPixels.y = (uint32_t)j;
+                                        params.offsetPixels.z = (uint32_t)k;
+                                        upload_buffer_fast(gpu, cmdbuf, paramsBuffer, paramsTransfer, sizeof(ParamsType), &params);
                                         // compute pass
                                         SDL_GPUStorageTextureReadWriteBinding binding[] = {
                                             SDL_GPUStorageTextureReadWriteBinding{k == 0 ? colorTexture : dirTexture},
@@ -751,6 +789,7 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
             }
 
             SDL_ReleaseGPUBuffer(gpu, paramsBuffer);
+            SDL_ReleaseGPUTransferBuffer(gpu, paramsTransfer);
             SDL_ReleaseGPUBuffer(gpu, lightsBuffer);
             SDL_ReleaseGPUBuffer(gpu, bvhNodesBuffer);
             SDL_ReleaseGPUBuffer(gpu, bvhVertsBuffer);
@@ -1313,7 +1352,12 @@ int main(int argc, char* argv[]) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GPU API supported: %s", SDL_GetGPUDriver(i));
     }
 
+#ifdef NDEBUG
+    SDL_GPUDevice* gpu = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, false, nullptr);
+#else
     SDL_GPUDevice* gpu = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, true, nullptr);
+#endif
+
     if (gpu == nullptr) {
         SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION, "GPU device creation failed: %s", SDL_GetError());
         SDL_Quit();

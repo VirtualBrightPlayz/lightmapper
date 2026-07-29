@@ -34,13 +34,13 @@ float atten(float4 lightPos, float3 pos)
     return att;
 }
 
-float atten2(float4 lightPos, float d)
+float atten2(float lightRange, float d)
 {
     float att = 0;
-    if (d <= 0 || d >= lightPos.w)
+    if (d <= 0 || d >= lightRange)
         return att;
-    float v = clamp(1.0 - pow(d / lightPos.w, 4), 0, 1) / pow(d, 2);
-    v = clamp(1.0 - pow(d / lightPos.w, 1), 0, 1);
+    float v = clamp(1.0 - pow(d / lightRange, 4), 0, 1) / pow(d, 2);
+    v = clamp(1.0 - pow(d / lightRange, 1), 0, 1);
     att += v;
     return att;
 }
@@ -225,10 +225,11 @@ void ShadeBVH(const MeshVertex v0, const MeshVertex v1, const MeshVertex v2, con
             RayHit hit = Trace(ray);
             if (hit.dist != float.maxValue)
             {
-                resultColor.xyz += colorTex[uint2(hit.uv1 * sizeOut)].xyz;
+                const float4 sample = colorTex[uint2(hit.uv1 * sizeOut)];
+                resultColor.xyz += sample.xyz;
                 resultColor.w += 1.0;
                 resultNormal.xyz = (resultNormal.xyz + normalize(ray.direction));
-                float attn = 1.0 / hit.dist;
+                const float attn = 1.0 / hit.dist;
                 resultNormal.w = (resultNormal.w + attn);
             }
         }
@@ -252,7 +253,7 @@ void ShadeBVH(const MeshVertex v0, const MeshVertex v1, const MeshVertex v2, con
                 // we hit something closer, don't shade
                 continue;
             }
-            const float attn = atten2(PointLights[k].position, hit.dist);
+            const float attn = atten2(PointLights[k].position.w, hit.dist);
             resultColor += float4(ray.energy * attn, 1);
             float3 tangentNormal = -ray.direction;
             resultNormal.xyz = (resultNormal.xyz + tangentNormal);
