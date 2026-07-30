@@ -1347,6 +1347,14 @@ int main(int argc, char* argv[]) {
 
     if (argc > 1) {
         cli_progress = true;
+
+#ifdef WIN32
+        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+        DWORD mode = 0;
+        GetConsoleMode(hConsole, &mode);
+        SetConsoleMode(hConsole, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+#endif
+
         uint32_t samples = 4;
         uint32_t size = 1024;
         uint32_t seed = 0;
