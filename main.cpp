@@ -1383,7 +1383,6 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    SDL_SetLogPriorities(SDL_LOG_PRIORITY_DEBUG);
     SDL_SetLogOutputFunction(on_log, nullptr);
 
     for (int i = 0; i < SDL_GetNumGPUDrivers(); i++) {
