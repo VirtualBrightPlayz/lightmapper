@@ -582,6 +582,7 @@ std::vector<uint4> get_BVH_inds2(const std::vector<MeshVertex>& verts, const std
 bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldCancelFunc)(), const std::string glbPath, const uint16_t texSize, const uint32_t seed = 0, const uint32_t samples = 4) {
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Baking lightmaps: size=%u, seed=%u, samples=%u, file=\"%s\"", texSize, seed, samples, glbPath.c_str());
     progress_reset();
+    report_progress(0);
     const uint16_t w = texSize;
     const uint16_t h = w;
     const uint16_t calcWidth = NUM_DISPATCH_COUNT;
