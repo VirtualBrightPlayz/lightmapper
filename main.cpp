@@ -95,7 +95,6 @@ void report_progress(const int32_t progress) {
         if (cli_progress)
             std::cout << (char)27 << "]9;4;1;" << progress << (char)7;
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "[%i%%]", progress);
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Rendered %i/100", progress);
         last_progress_time = cur;
     }
 }
