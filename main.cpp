@@ -5,7 +5,7 @@
 #include <fstream>
 #include <vector>
 #include <algorithm>
-#include <map>
+#include <stack>
 
 #include "shared_data.h"
 
@@ -89,14 +89,14 @@ void progress_reset() {
 }
 
 void report_progress(const int32_t progress) {
-    std::time_t cur = std::time(nullptr);
+    // std::time_t cur = std::time(nullptr);
     last_progress_value = progress;
-    if (cur > last_progress_time) {
+    // if (cur > last_progress_time) {
         if (cli_progress)
             std::cout << (char)27 << "]9;4;1;" << progress << (char)7;
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "[%i%%]", progress);
-        last_progress_time = cur;
-    }
+        // last_progress_time = cur;
+    // }
 }
 
 uint8_t* malloc_file(const std::string path, size_t* filesize) {
@@ -291,6 +291,57 @@ bool upload_buffer_tex(SDL_GPUDevice* gpu, SDL_GPUTexture* buffer, uint32_t widt
     return true;
 }
 
+void load_glb_mesh(tinygltf::Model& model, tinygltf::Node& node, std::vector<MeshObject>& meshesTmp, std::vector<MeshObject>& meshes, float4x4 xformGlobal) {
+    // no clue why i did it this way.
+    if (node.mesh != -1) {
+        size_t meshIndex = 0;
+        for (size_t j = 0; j < model.meshes.size(); j++) {
+            if (j == node.mesh) {
+                for (size_t k = 0; k < model.meshes[j].primitives.size(); k++) {
+                    MeshObject obj = meshesTmp[meshIndex + k];
+                    obj.model = xformGlobal;
+                    obj.invModel = glm::inverse(xformGlobal);
+                    obj.indices.z = 1; // render flag
+                    meshes.push_back(obj);
+                }
+                break;
+            } else {
+                meshIndex += model.meshes[j].primitives.size();
+            }
+        }
+    }
+}
+
+void load_glb_light(tinygltf::Model& model, tinygltf::Node& node, std::vector<PointLightObject>& lights, float4x4 xformGlobal) {
+    if (node.light != -1) {
+        tinygltf::Light mdlLight = model.lights[node.light];
+        PointLightObject light{};
+        light.color.r = 1.0f;
+        light.color.g = 1.0f;
+        light.color.b = 1.0f;
+        if (mdlLight.color.size() == 3) {
+            light.color.r = (float)mdlLight.color[0];
+            light.color.g = (float)mdlLight.color[1];
+            light.color.b = (float)mdlLight.color[2];
+        }
+        light.color.a = (float)mdlLight.intensity;
+        float3 scl;
+        glm::quat rot;
+        float3 pos;
+        float3 skew;
+        float4 perspective;
+        glm::decompose(xformGlobal, scl, rot, pos, skew, perspective);
+        light.position.x = pos.x;
+        light.position.y = pos.y;
+        light.position.z = pos.z;
+        light.position.w = (float)mdlLight.range;
+        if (mdlLight.extras.IsObject() && mdlLight.extras.Has("size")) {
+            light.data.x = (float)mdlLight.extras.Get("size").GetNumberAsDouble();
+        }
+        lights.push_back(light);
+    }
+}
+
 void load_glb(std::string file, std::vector<MeshObject>& meshes, std::vector<MeshVertex>& verts, std::vector<uint4>& inds, std::vector<PointLightObject>& lights) {
     tinygltf::TinyGLTF loader{};
     tinygltf::Model model{};
@@ -312,6 +363,7 @@ void load_glb(std::string file, std::vector<MeshObject>& meshes, std::vector<Mes
         }
     }
 
+    std::vector<MeshObject> meshesTmp{};
     for (size_t i = 0; i < model.meshes.size(); i++) {
         for (size_t j = 0; j < model.meshes[i].primitives.size(); j++) {
             tinygltf::Primitive primitive = model.meshes[i].primitives[j];
@@ -461,62 +513,60 @@ void load_glb(std::string file, std::vector<MeshObject>& meshes, std::vector<Mes
             mesh.model = glm::identity<float4x4>();
             mesh.invModel = glm::inverse(mesh.model);
 
-            meshes.push_back(mesh);
+            meshesTmp.push_back(mesh);
         }
     }
 
-    for (size_t i = 0; i < model.nodes.size(); i++) {
-        tinygltf::Node node = model.nodes[i];
-        if (node.mesh != -1) {
+    int model_scene = model.defaultScene;
+    if (model.defaultScene == -1) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "model default scene is -1");
+        model_scene = 0;
+    }
+    tinygltf::Scene scene = model.scenes[model_scene];
+    for (size_t n = 0; n < scene.nodes.size(); n++) {
+        int nodeIdx = scene.nodes[n];
+        tinygltf::Node node = model.nodes[nodeIdx];
+
+        std::stack<float4x4> xforms{};
+        std::stack<int> nodes{};
+        xforms.push(glm::identity<float4x4>());
+        nodes.push(nodeIdx);
+
+        while (xforms.size() > 0 && nodes.size() > 0) {
+            float4x4 parentXform = xforms.top();
+            int childIdx = nodes.top();
+            xforms.pop();
+            nodes.pop();
+            tinygltf::Node child = model.nodes[childIdx];
             float4x4 t = glm::identity<float4x4>();
             float4x4 r = glm::identity<float4x4>();
             float4x4 s = glm::identity<float4x4>();
-            // float4x4 m = glm::identity<float4x4>();
-            if (node.translation.size() == 3)
-                t = glm::translate(t, float3(node.translation[0], node.translation[1], node.translation[2]));
-            if (node.rotation.size() == 4)
-                r = float4x4(glm::quat((float)node.rotation[0], (float)node.rotation[1], (float)node.rotation[2], (float)node.rotation[3]));
-            if (node.scale.size() == 3)
-                s = glm::scale(s, float3(node.scale[0], node.scale[1], node.scale[2]));
-            float4x4 m = t * r * s;
-            size_t meshIndex = 0;
-            for (size_t j = 0; j < model.meshes.size(); j++) {
-                if (j == node.mesh) {
-                    for (size_t k = 0; k < model.meshes[j].primitives.size(); k++) {
-                        meshes[meshIndex + k].model = m;
-                        meshes[meshIndex + k].invModel = glm::inverse(m);
-                        meshes[meshIndex + k].indices.z = 1; // render flag
-                    }
-                    break;
-                } else {
-                    meshIndex += model.meshes[j].primitives.size();
-                }
+            if (child.translation.size() == 3)
+                t = glm::translate(t, float3(child.translation[0], child.translation[1], child.translation[2]));
+            if (child.rotation.size() == 4)
+                r = float4x4(glm::quat((float)child.rotation[0], (float)child.rotation[1], (float)child.rotation[2], (float)child.rotation[3]));
+            if (child.scale.size() == 3)
+                s = glm::scale(s, float3(child.scale[0], child.scale[1], child.scale[2]));
+            float4x4 childXformLocal = t * r * s;
+            float4x4 childXform = parentXform * childXformLocal;
+
+            load_glb_mesh(model, child, meshesTmp, meshes, childXform);
+            load_glb_light(model, child, lights, childXform);
+
+            // if (child.children.size() == 0) {
+                // continue;
+            // }
+            for (size_t k = 0; k < child.children.size(); k++) {
+                xforms.push(childXform);
+                nodes.push(child.children[k]);
             }
-        }
-        if (node.light != -1) {
-            tinygltf::Light mdlLight = model.lights[node.light];
-            PointLightObject light{};
-            light.color.r = 1.0f;
-            light.color.g = 1.0f;
-            light.color.b = 1.0f;
-            if (mdlLight.color.size() == 3) {
-                light.color.r = (float)mdlLight.color[0];
-                light.color.g = (float)mdlLight.color[1];
-                light.color.b = (float)mdlLight.color[2];
-            }
-            light.color.a = (float)mdlLight.intensity;
-            if (node.translation.size() == 3) {
-                light.position.x = (float)node.translation[0];
-                light.position.y = (float)node.translation[1];
-                light.position.z = (float)node.translation[2];
-            }
-            light.position.w = (float)mdlLight.range;
-            if (mdlLight.extras.IsObject() && mdlLight.extras.Has("size")) {
-                light.data.x = (float)mdlLight.extras.Get("size").GetNumberAsDouble();
-            }
-            lights.push_back(light);
         }
     }
+
+    // for (size_t i = 0; i < model.nodes.size(); i++) {
+        // tinygltf::Node node = model.nodes[i];
+        // load_glb_mesh(model, node, meshes, xform);
+    // }
 }
 
 std::vector<tinybvh::bvhvec4> get_BVH_verts(const std::vector<MeshVertex>& verts, const std::vector<uint4>& inds, const std::vector<MeshObject>& meshes) {

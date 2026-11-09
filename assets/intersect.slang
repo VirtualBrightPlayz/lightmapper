@@ -96,7 +96,6 @@ void IntersectVertsInds(Ray ray, inout float3 hitDUV, out uint32_t hitIdx, IArra
                     {
                         hit = float3(t, u, v);
                         hitIdx = triIdx;
-                        hitDUV = hit;
                     }
                 }
             }

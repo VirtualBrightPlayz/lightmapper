@@ -18,6 +18,9 @@
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/ext/matrix_projection.hpp>
 #include <glm/ext/matrix_clip_space.hpp>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/matrix_decompose.hpp>
+#undef GLM_ENABLE_EXPERIMENTAL
 #include <glm/ext/scalar_constants.hpp>
 
 typedef glm::mat4 float4x4;

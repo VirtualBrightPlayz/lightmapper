@@ -36,13 +36,11 @@ float atten(float4 lightPos, float3 pos)
 
 float atten2(float lightRange, float d)
 {
-    float att = 0;
-    if (d <= 0 || d >= lightRange)
-        return att;
-    float v = clamp(1.0 - pow(d / lightRange, 4), 0, 1) / pow(d, 2);
-    v = clamp(1.0 - pow(d / lightRange, 1), 0, 1);
-    att += v;
-    return att;
+    if (d <= 0)
+        return 1;
+    if (d >= lightRange)
+        return 0;
+    return clamp(1.0 - pow(d / lightRange, 1), 0, 1);
 }
 
 float GetArea(float2 a, float2 b, float2 c)
@@ -110,7 +108,7 @@ RayHit Trace(Ray ray, float3 color, bool canShade)
         const MeshVertex vertex1 = BVHVertices[v0 + 1];
         const MeshVertex vertex2 = BVHVertices[v0 + 2];
         const float w = 1 - hitDUV.y - hitDUV.z;
-        bestHit.dist = hitDUV.x;
+        bestHit.dist = hitDUV.x * length(ray.direction);
         bestHit.position = ray.origin + hitDUV.x * ray.direction;
         bestHit.normal = normalize(hitDUV.y * vertex1.normal.xyz + hitDUV.z * vertex2.normal.xyz + w * vertex0.normal.xyz);
         bestHit.albedo = float3(0.8);
@@ -246,19 +244,22 @@ void ShadeBVH(const MeshVertex v0, const MeshVertex v1, const MeshVertex v2, con
         uint k = Params[0].offsetPixels.w;
         {
             // reset the ray
-            ray.origin = PointLights[k].position.xyz;
-            const float3 targetPos = wpos + wnorm * 0.001;
-            ray.direction = normalize(targetPos - ray.origin);
-            const float d = distance(ray.origin, targetPos);
+            const float3 lightPos = PointLights[k].position.xyz;
+            const float3 targetPos = wpos + wnorm * 0.01;
+            ray.origin = lightPos;
+            ray.direction = (targetPos - lightPos);
+            const float d = distance(targetPos, lightPos);
             ray.energy = PointLights[k].color.rgb * PointLights[k].color.a;
+            ray.energy = float3(1);
             ray.predicted_distance = 0;
             // trace the ray and shade
             RayHit hit = Trace(ray);
-            if (hit.dist + 0.001 >= d)
-            // if (!TraceFast(ray, d))
+            const float d2 = distance(hit.position, lightPos);
+            if (d2 + 0.01 >= d)
+            // if (hit.dist != 1e30f)
             {
-                const float attn = atten2(PointLights[k].position.w, hit.dist);
-                // const float attn = 1.0;
+                const float attn = atten2(PointLights[k].position.w, d);
+                // const float attn = 1.0 / hit.dist;
                 resultColor += float4(ray.energy * attn, 1);
                 float3 tangentNormal = -ray.direction;
                 resultNormal.xyz = (resultNormal.xyz + tangentNormal);
@@ -269,8 +270,9 @@ void ShadeBVH(const MeshVertex v0, const MeshVertex v1, const MeshVertex v2, con
     // finalize outputs as needed
     if (resultColor.a != 0)
     {
-        lightColor = (lightColor + resultColor / resultColor.a) / 2.0;
-        lightColor.a = 1.0;
+        // lightColor = (lightColor + resultColor / resultColor.a) / 2.0;
+        lightColor += resultColor;
+        // lightColor.a = 1.0;
     }
     lightDir.xyz = (lightDir.xyz + resultNormal.xyz);
     lightDir.w = (lightDir.w + resultNormal.w) / 2.0;
@@ -281,6 +283,7 @@ float4 TraceBVH(float2 uv1)
     int2 sizeOut;
     outTex.GetDimensions(sizeOut.x, sizeOut.y);
     const float2 halfPixel = 0.5 / sizeOut;
+    const float halfPixel2 = length(halfPixel * 8.0); // 4 pixels = mipmap boundary
     float4 lightColor = float4(0);
     float4 lightDir = float4(0);
     for (uint32_t i = 0; i < BVHIndices.getCount(); i++)
@@ -295,17 +298,22 @@ float4 TraceBVH(float2 uv1)
             continue;
         }
         const float3 uvw = GetBarycentric((v0.uv01.zw), (v1.uv01.zw), (v2.uv01.zw), (uv1));
-        if (uvw.x < -EPSILON || uvw.x > 1 + EPSILON)
+        const float uvwLen = uvw.x + uvw.y + uvw.z;
+        if (uvwLen < 1 - EPSILON || uvwLen > 1 + EPSILON)
         {
             // continue;
         }
-        if (uvw.y < -EPSILON || uvw.y > 1 + EPSILON)
+        if (uvw.x < -halfPixel2 || uvw.x > 1 + halfPixel2)
         {
-            // continue;
+            continue;
         }
-        if (uvw.z < -EPSILON || uvw.z > 1 + EPSILON)
+        if (uvw.y < -halfPixel2 || uvw.y > 1 + halfPixel2)
         {
-            // continue;
+            continue;
+        }
+        if (uvw.z < -halfPixel2 || uvw.z > 1 + halfPixel2)
+        {
+            continue;
         }
         ShadeBVH(v0, v1, v2, uvw, lightColor, lightDir);
         break;
