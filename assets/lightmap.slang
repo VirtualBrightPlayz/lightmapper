@@ -359,8 +359,4 @@ void main(uint3 id : SV_DispatchThreadID)
         else
             outTex[uv] = outTex[uv] + (result / (Params[0].inSeed.y * Params[0].offsetPixels.w + 1));
     }
-    else if (!isFirst)
-    {
-        outTex[uv] = colorTex[uv];
-    }
 }
