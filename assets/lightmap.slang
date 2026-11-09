@@ -256,10 +256,9 @@ void ShadeBVH(const MeshVertex v0, const MeshVertex v1, const MeshVertex v2, con
             RayHit hit = Trace(ray);
             const float d2 = distance(hit.position, lightPos);
             if (d2 + 0.01 >= d)
-            // if (hit.dist != 1e30f)
+            if (hit.dist != 1e30f)
             {
                 const float attn = atten2(PointLights[k].position.w, d);
-                // const float attn = 1.0 / hit.dist;
                 resultColor += float4(ray.energy * attn, 1);
                 float3 tangentNormal = -ray.direction;
                 resultNormal.xyz = (resultNormal.xyz + tangentNormal);
@@ -270,9 +269,9 @@ void ShadeBVH(const MeshVertex v0, const MeshVertex v1, const MeshVertex v2, con
     // finalize outputs as needed
     if (resultColor.a != 0)
     {
-        // lightColor = (lightColor + resultColor / resultColor.a) / 2.0;
-        lightColor += resultColor;
-        // lightColor.a = 1.0;
+        lightColor = (lightColor + resultColor / resultColor.a) / 2.0;
+        // lightColor += resultColor;
+        lightColor.a = 1.0;
     }
     lightDir.xyz = (lightDir.xyz + resultNormal.xyz);
     lightDir.w = (lightDir.w + resultNormal.w) / 2.0;
@@ -355,10 +354,10 @@ void main(uint3 id : SV_DispatchThreadID)
             float3 normal = result.xyz * 2.0 - 1.0;
             float3 output = normalize(input + normal);
             float inAttn = outTex[uv].w;
-            outTex[uv] = float4(output * 0.5 + 0.5, inAttn + result.w);
+            outTex[uv] = float4(output * 0.5 + 0.5, inAttn + result.w / (Params[0].inSeed.y * Params[0].offsetPixels.w + 1));
         }
         else
-            outTex[uv] = outTex[uv] + result;
+            outTex[uv] = outTex[uv] + (result / (Params[0].inSeed.y * Params[0].offsetPixels.w + 1));
     }
     else if (!isFirst)
     {
