@@ -315,6 +315,9 @@ void load_glb_mesh(tinygltf::Model& model, tinygltf::Node& node, std::vector<Mes
 void load_glb_light(tinygltf::Model& model, tinygltf::Node& node, std::vector<PointLightObject>& lights, float4x4 xformGlobal) {
     if (node.light != -1) {
         tinygltf::Light mdlLight = model.lights[node.light];
+        if (mdlLight.type != "point") {
+            return;
+        }
         PointLightObject light{};
         light.color.r = 1.0f;
         light.color.g = 1.0f;

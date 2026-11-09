@@ -233,8 +233,7 @@ void ShadeBVH(const MeshVertex v0, const MeshVertex v1, const MeshVertex v2, con
                 resultColor.xyz += sample.xyz;
                 resultColor.w += sample.w;
                 resultNormal.xyz = (resultNormal.xyz + normalize(ray.direction));
-                const float attn = 1.0 / hit.dist;
-                resultNormal.w = (resultNormal.w + attn);
+                resultNormal.w = (resultNormal.w + 1.0 / hit.dist);
             }
         }
     }
@@ -250,7 +249,6 @@ void ShadeBVH(const MeshVertex v0, const MeshVertex v1, const MeshVertex v2, con
             ray.direction = (targetPos - lightPos);
             const float d = distance(targetPos, lightPos);
             ray.energy = PointLights[k].color.rgb * PointLights[k].color.a;
-            ray.energy = float3(1);
             ray.predicted_distance = 0;
             // trace the ray and shade
             RayHit hit = Trace(ray);
@@ -270,7 +268,6 @@ void ShadeBVH(const MeshVertex v0, const MeshVertex v1, const MeshVertex v2, con
     if (resultColor.a != 0)
     {
         lightColor = (lightColor + resultColor / resultColor.a) / 2.0;
-        // lightColor += resultColor;
         lightColor.a = 1.0;
     }
     lightDir.xyz = (lightDir.xyz + resultNormal.xyz);
