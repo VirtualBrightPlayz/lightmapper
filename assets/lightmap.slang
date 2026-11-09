@@ -220,10 +220,6 @@ void ShadeBVH(const MeshVertex v0, const MeshVertex v1, const MeshVertex v2, con
     float4 resultNormal = float4(0);
     const float3 wpos = ray.origin.xyz;
     const float3 wnorm = ray.direction.xyz;
-    // lightColor.rgb = wnorm;
-    // lightColor.a = 1.0;
-    // lightDir.xyz = wnorm;
-    // return;
     // texture lights
     if (Params[0].inSeed.y != 0)
     {
@@ -237,7 +233,7 @@ void ShadeBVH(const MeshVertex v0, const MeshVertex v1, const MeshVertex v2, con
             {
                 const float4 sample = colorTex[uint2(hit.uv1 * sizeOut)];
                 resultColor.xyz += sample.xyz;
-                resultColor.w += 1.0;
+                resultColor.w += sample.w;
                 resultNormal.xyz = (resultNormal.xyz + normalize(ray.direction));
                 const float attn = 1.0 / hit.dist;
                 resultNormal.w = (resultNormal.w + attn);
@@ -335,14 +331,15 @@ void main(uint3 id : SV_DispatchThreadID)
     }
     threadId = uv;
     float2 uv1 = (uv + 0.5) / float2(sizeOut);
-    if (Params[0].inSeed.y == 0 && Params[0].offsetPixels.w == 0)
+    bool isFirst = Params[0].inSeed.y == 0 && Params[0].offsetPixels.w == 0;
+    if (isFirst)
     {
         outTex[uv] = float4(0);
     }
     float4 result = TraceBVH(uv1);
     if (result.w > 0)
     {
-        if (Params[0].inSeed.y == 0 && Params[0].offsetPixels.w == 0)
+        if (isFirst)
             outTex[uv] = result;
         else if (Params[0].offsetPixels.z == 1)
         {
@@ -350,9 +347,13 @@ void main(uint3 id : SV_DispatchThreadID)
             float3 normal = result.xyz * 2.0 - 1.0;
             float3 output = normalize(input + normal);
             float inAttn = outTex[uv].w;
-            outTex[uv] = float4(output * 0.5 + 0.5, inAttn + result.w / (Params[0].inSeed.y * Params[0].offsetPixels.w + 1));
+            outTex[uv] = float4(output * 0.5 + 0.5, inAttn + result.w);
         }
         else
-            outTex[uv] = outTex[uv] + (result / (Params[0].inSeed.y * Params[0].offsetPixels.w + 1));
+            outTex[uv] = outTex[uv] + result;
+    }
+    else if (!isFirst)
+    {
+        outTex[uv] = colorTex[uv];
     }
 }

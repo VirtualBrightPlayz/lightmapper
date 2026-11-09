@@ -72,8 +72,8 @@ void IntersectVertsInds(Ray ray, inout float3 hitDUV, out uint32_t hitIdx, IArra
     uint32_t stack[32];
     uint32_t stackPtr = 0;
     uint32_t counter = 0;
-    while (counter < 10240)
-    // while (true)
+    // while (counter < 10240)
+    while (true)
     {
         counter++;
         const BVHNode n = bvhNodes[node];
@@ -178,8 +178,8 @@ bool IntersectVertsIndsFast(Ray ray, const float tMax, IArray<MeshVertex> verts,
     uint32_t stack[32];
     uint32_t stackPtr = 0;
     uint32_t counter = 0;
-    while (counter < 10240)
-    // while (true)
+    // while (counter < 10240)
+    while (true)
     {
         counter++;
         const BVHNode n = bvhNodes[node];
