@@ -325,7 +325,6 @@ void load_glb(std::string file, std::vector<MeshObject>& meshes, std::vector<Mes
             tinygltf::Buffer indexBuffer = model.buffers[indexView.buffer];
 
             if (indexAccess.type == TINYGLTF_TYPE_SCALAR && indexAccess.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
-                uint16_t* indexData = (uint16_t*)indexBuffer.data.data();
                 // assert(indexAccess.ByteStride(indexView) == sizeof(uint16_t));
                 // assert(indexAccess.byteOffset == 0);
                 // for (size_t k = 0; k < indexView.byteLength; k+=indexAccess.ByteStride(indexView)) {
@@ -334,6 +333,14 @@ void load_glb(std::string file, std::vector<MeshObject>& meshes, std::vector<Mes
                     assert(offset < indexBuffer.data.size());
                     uint16_t index = 0;
                     memcpy(&index, &indexBuffer.data.data()[offset], sizeof(uint16_t));
+                    indsTmp.push_back(index);
+                }
+            } else if (indexAccess.type == TINYGLTF_TYPE_SCALAR && indexAccess.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
+                for (size_t k = 0; k < indexAccess.count; k++) {
+                    size_t offset = indexView.byteOffset + k * indexAccess.ByteStride(indexView) + indexAccess.byteOffset;
+                    assert(offset < indexBuffer.data.size());
+                    uint32_t index = 0;
+                    memcpy(&index, &indexBuffer.data.data()[offset], sizeof(uint32_t));
                     indsTmp.push_back(index);
                 }
             }
