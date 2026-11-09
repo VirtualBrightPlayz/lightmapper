@@ -13,6 +13,9 @@
 INCBIN(LightmapSPV, "assets/lightmap.spv");
 INCBIN(BasicVertSPV, "assets/basic.vert.spv");
 INCBIN(BasicFragSPV, "assets/basic.frag.spv");
+INCBIN(LightmapDXIL, "assets/lightmap.dxil");
+INCBIN(BasicVertDXIL, "assets/basic.vert.dxil");
+INCBIN(BasicFragDXIL, "assets/basic.frag.dxil");
 
 #define TINYGLTF_IMPLEMENTATION
 #include "tiny_gltf.h"
@@ -92,6 +95,7 @@ void report_progress(const int32_t progress) {
         if (cli_progress)
             std::cout << (char)27 << "]9;4;1;" << progress << (char)7;
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "[%i%%]", progress);
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Rendered %i/100", progress);
         last_progress_time = cur;
     }
 }
@@ -111,6 +115,16 @@ uint8_t* malloc_file(const std::string path, size_t* filesize) {
     return filedata;
 }
 
+bool is_spirv(SDL_GPUDevice* gpu) {
+    SDL_GPUShaderFormat format = SDL_GetGPUShaderFormats(gpu);
+    return (format & SDL_GPU_SHADERFORMAT_SPIRV) != 0;
+}
+
+bool is_dxil(SDL_GPUDevice* gpu) {
+    SDL_GPUShaderFormat format = SDL_GetGPUShaderFormats(gpu);
+    return (format & SDL_GPU_SHADERFORMAT_DXIL) != 0;
+}
+
 bool create_texture_hdr(SDL_GPUDevice* gpu, const uint32_t w, const uint32_t h, SDL_GPUTexture** textureOut) {
     SDL_GPUTextureCreateInfo textureCreateInfo{};
     textureCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
@@ -125,12 +139,12 @@ bool create_texture_hdr(SDL_GPUDevice* gpu, const uint32_t w, const uint32_t h, 
     return texture != nullptr;
 }
 
-SDL_GPUComputePipeline* create_pipeline(SDL_GPUDevice* gpu, size_t filesize, const uint8_t* filedata) {
+SDL_GPUComputePipeline* create_pipeline(SDL_GPUDevice* gpu, size_t filesize, const uint8_t* filedata, const SDL_GPUShaderFormat format) {
     SDL_GPUComputePipelineCreateInfo createInfo{};
     createInfo.code_size = filesize;
     createInfo.code = filedata;
     createInfo.entrypoint = "main";
-    createInfo.format = SDL_GPU_SHADERFORMAT_SPIRV;
+    createInfo.format = format;
     createInfo.num_readonly_storage_textures = 1;
     createInfo.num_readonly_storage_buffers = NUM_SHADER_BINDINGS;
     createInfo.num_readwrite_storage_textures = 1;
@@ -312,11 +326,14 @@ void load_glb(std::string file, std::vector<MeshObject>& meshes, std::vector<Mes
 
             if (indexAccess.type == TINYGLTF_TYPE_SCALAR && indexAccess.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
                 uint16_t* indexData = (uint16_t*)indexBuffer.data.data();
-                assert(indexAccess.ByteStride(indexView) == sizeof(uint16_t));
-                assert(indexAccess.byteOffset == 0);
-                for (size_t k = 0; k < indexView.byteLength; k+=indexAccess.ByteStride(indexView)) {
+                // assert(indexAccess.ByteStride(indexView) == sizeof(uint16_t));
+                // assert(indexAccess.byteOffset == 0);
+                // for (size_t k = 0; k < indexView.byteLength; k+=indexAccess.ByteStride(indexView)) {
+                for (size_t k = 0; k < indexAccess.count; k++) {
+                    size_t offset = indexView.byteOffset + k * indexAccess.ByteStride(indexView) + indexAccess.byteOffset;
+                    assert(offset < indexBuffer.data.size());
                     uint16_t index = 0;
-                    memcpy(&index, &indexBuffer.data.data()[k + indexView.byteOffset], sizeof(uint16_t));
+                    memcpy(&index, &indexBuffer.data.data()[offset], sizeof(uint16_t));
                     indsTmp.push_back(index);
                 }
             }
@@ -331,13 +348,16 @@ void load_glb(std::string file, std::vector<MeshObject>& meshes, std::vector<Mes
                 tinygltf::Accessor positionAccess = model.accessors[primitive.attributes["POSITION"]];
                 tinygltf::BufferView positionView = model.bufferViews[positionAccess.bufferView];
                 tinygltf::Buffer positionBuffer = model.buffers[positionView.buffer];
-                assert(positionAccess.byteOffset == 0);
+                // assert(positionAccess.byteOffset == 0);
 
                 if (positionAccess.type == TINYGLTF_TYPE_VEC3 && positionAccess.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT) {
-                    assert(positionAccess.ByteStride(positionView) == sizeof(float3));
-                    for (size_t k = 0; k < positionView.byteLength; k+=positionAccess.ByteStride(positionView)) {
+                    // assert(positionAccess.ByteStride(positionView) == sizeof(float3));
+                    // for (size_t k = 0; k < positionView.byteLength; k+=positionAccess.ByteStride(positionView)) {
+                    for (size_t k = 0; k < positionAccess.count; k++) {
+                        size_t offset = positionView.byteOffset + k * positionAccess.ByteStride(positionView) + positionAccess.byteOffset;
+                        assert(offset < positionBuffer.data.size());
                         float3 position = float3();
-                        memcpy(&position, &positionBuffer.data.data()[k + positionView.byteOffset], sizeof(float3));
+                        memcpy(&position, &positionBuffer.data.data()[offset], sizeof(float3));
                         positions.push_back(position);
                     }
                 }
@@ -347,13 +367,16 @@ void load_glb(std::string file, std::vector<MeshObject>& meshes, std::vector<Mes
                 tinygltf::Accessor positionAccess = model.accessors[primitive.attributes["NORMAL"]];
                 tinygltf::BufferView positionView = model.bufferViews[positionAccess.bufferView];
                 tinygltf::Buffer positionBuffer = model.buffers[positionView.buffer];
-                assert(positionAccess.byteOffset == 0);
+                // assert(positionAccess.byteOffset == 0);
 
                 if (positionAccess.type == TINYGLTF_TYPE_VEC3 && positionAccess.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT) {
-                    assert(positionAccess.ByteStride(positionView) == sizeof(float3));
-                    for (size_t k = 0; k < positionView.byteLength; k+=positionAccess.ByteStride(positionView)) {
+                    // assert(positionAccess.ByteStride(positionView) == sizeof(float3));
+                    // for (size_t k = 0; k < positionView.byteLength; k+=positionAccess.ByteStride(positionView)) {
+                    for (size_t k = 0; k < positionAccess.count; k++) {
+                        size_t offset = positionView.byteOffset + k * positionAccess.ByteStride(positionView) + positionAccess.byteOffset;
+                        assert(offset < positionBuffer.data.size());
                         float3 position = float3();
-                        memcpy(&position, &positionBuffer.data.data()[k + positionView.byteOffset], sizeof(float3));
+                        memcpy(&position, &positionBuffer.data.data()[offset], sizeof(float3));
                         normals.push_back(position);
                     }
                 }
@@ -363,13 +386,16 @@ void load_glb(std::string file, std::vector<MeshObject>& meshes, std::vector<Mes
                 tinygltf::Accessor positionAccess = model.accessors[primitive.attributes["TEXCOORD_0"]];
                 tinygltf::BufferView positionView = model.bufferViews[positionAccess.bufferView];
                 tinygltf::Buffer positionBuffer = model.buffers[positionView.buffer];
-                assert(positionAccess.byteOffset == 0);
+                // assert(positionAccess.byteOffset == 0);
 
                 if (positionAccess.type == TINYGLTF_TYPE_VEC2 && positionAccess.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT) {
-                    assert(positionAccess.ByteStride(positionView) == sizeof(float2));
-                    for (size_t k = 0; k < positionView.byteLength; k+=positionAccess.ByteStride(positionView)) {
+                    // assert(positionAccess.ByteStride(positionView) == sizeof(float2));
+                    // for (size_t k = 0; k < positionView.byteLength; k+=positionAccess.ByteStride(positionView)) {
+                    for (size_t k = 0; k < positionAccess.count; k++) {
+                        size_t offset = positionView.byteOffset + k * positionAccess.ByteStride(positionView) + positionAccess.byteOffset;
+                        assert(offset < positionBuffer.data.size());
                         float2 position = float2();
-                        memcpy(&position, &positionBuffer.data.data()[k + positionView.byteOffset], sizeof(float2));
+                        memcpy(&position, &positionBuffer.data.data()[offset], sizeof(float2));
                         texcoord0.push_back(position);
                     }
                 }
@@ -379,13 +405,16 @@ void load_glb(std::string file, std::vector<MeshObject>& meshes, std::vector<Mes
                 tinygltf::Accessor positionAccess = model.accessors[primitive.attributes["TEXCOORD_1"]];
                 tinygltf::BufferView positionView = model.bufferViews[positionAccess.bufferView];
                 tinygltf::Buffer positionBuffer = model.buffers[positionView.buffer];
-                assert(positionAccess.byteOffset == 0);
+                // assert(positionAccess.byteOffset == 0);
 
                 if (positionAccess.type == TINYGLTF_TYPE_VEC2 && positionAccess.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT) {
-                    assert(positionAccess.ByteStride(positionView) == sizeof(float2));
-                    for (size_t k = 0; k < positionView.byteLength; k+=positionAccess.ByteStride(positionView)) {
+                    // assert(positionAccess.ByteStride(positionView) == sizeof(float2));
+                    // for (size_t k = 0; k < positionView.byteLength; k+=positionAccess.ByteStride(positionView)) {
+                    for (size_t k = 0; k < positionAccess.count; k++) {
+                        size_t offset = positionView.byteOffset + k * positionAccess.ByteStride(positionView) + positionAccess.byteOffset;
+                        assert(offset < positionBuffer.data.size());
                         float2 position = float2();
-                        memcpy(&position, &positionBuffer.data.data()[k + positionView.byteOffset], sizeof(float2));
+                        memcpy(&position, &positionBuffer.data.data()[offset], sizeof(float2));
                         // position = glm::fract(position);
                         texcoord1.push_back(position);
                     }
@@ -586,14 +615,21 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
     std::vector<MeshVertex> bvh_verts2 = get_BVH_verts2(verts, inds, meshes);
     tinybvh::BVH_GPU bvh{};
     bvh.BuildHQ(bvh_verts.data(), (uint32_t)bvh_verts.size() / 3);
+    bvh.Optimize();
 
     size_t filesize = gLightmapSPVSize;
     const uint8_t* lightmap = gLightmapSPVData;
+    SDL_GPUShaderFormat format = SDL_GPU_SHADERFORMAT_SPIRV;
+    if (is_dxil(gpu)) {
+        filesize = gLightmapDXILSize;
+        lightmap = gLightmapDXILData;
+        format = SDL_GPU_SHADERFORMAT_DXIL;
+    }
     if (lightmap == nullptr) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Lightmap shader file not found");
         result = false;
     } else {
-        SDL_GPUComputePipeline* pipeline = create_pipeline(gpu, filesize, lightmap);
+        SDL_GPUComputePipeline* pipeline = create_pipeline(gpu, filesize, lightmap, format);
         // SDL_free(lightmap);
         lightmap = nullptr;
         if (pipeline == nullptr) {
@@ -658,47 +694,58 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
                     for (uint32_t sample = 0; sample < samples; sample++) {
                         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Sample %u/%u", sample + 1, samples);
 
+                        size_t lightCount = 1;
+                        if (sample == 0) {
+                            lightCount = lights.size();
+                        }
+
                         // render texture in chunks
                         for (size_t i = 0; i < w; i+=calcWidth) {
                             for (size_t j = 0; j < h; j+=calcWidth) {
-                                report_progress((int)((float)(k * w * h * samples + sample * w * h + i * w + j) / (float)count * 100.0f));
-                                SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(gpu);
+                                for (size_t m = 0; m < lightCount; m++) {
+                                    size_t progress = (k * samples * w * h * lightCount) + (sample * w * h * lightCount) + (i * h * lightCount) + (j * lightCount) + m;
+                                    report_progress((int)((float)progress / (float)(count * lightCount) * 100.0f));
+                                    SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(gpu);
 
-                                // copy pass
-                                params.inSeed.x = (float)(seed + sample);
-                                params.inSeed.y = (float)sample;
-                                params.offsetPixels.x = (uint32_t)i;
-                                params.offsetPixels.y = (uint32_t)j;
-                                params.offsetPixels.z = (uint32_t)k;
-                                upload_buffer_fast(gpu, cmdbuf, paramsBuffer, paramsTransfer, sizeof(ParamsType), &params);
-                                // compute pass
-                                SDL_GPUStorageTextureReadWriteBinding binding[] = {
-                                    SDL_GPUStorageTextureReadWriteBinding{k == 0 ? colorTextures[sample % 2] : dirTextures[sample % 2]},
-                                };
-                                lastSample = sample % 2;
-                                const uint32_t nextSample = (sample + 1) % 2;
-                                SDL_GPUBuffer* bufferBindings[] = {paramsBuffer, lightsBuffer, bvhNodesBuffer, bvhVertsBuffer, bvhIndsBuffer};
-                                SDL_GPUComputePass* computePass = SDL_BeginGPUComputePass(cmdbuf, binding, 1, nullptr, 0);
-                                SDL_BindGPUComputeStorageTextures(computePass, 0, k == 0 ? &colorTextures[nextSample] : &dirTextures[nextSample], 1);
-                                SDL_BindGPUComputeStorageBuffers(computePass, 0, bufferBindings, NUM_SHADER_BINDINGS);
-                                SDL_BindGPUComputePipeline(computePass, pipeline);
-                                SDL_DispatchGPUCompute(computePass, calcWidth / NUM_SHADER_THREADCOUNT, calcWidth / NUM_SHADER_THREADCOUNT, 1);
-                                SDL_EndGPUComputePass(computePass);
+                                    // copy pass
+                                    params.inSeed.x = (float)(seed + sample);
+                                    params.inSeed.y = (float)sample;
+                                    params.offsetPixels.x = (uint32_t)i;
+                                    params.offsetPixels.y = (uint32_t)j;
+                                    params.offsetPixels.z = (uint32_t)k;
+                                    params.offsetPixels.w = (uint32_t)m;
+                                    upload_buffer_fast(gpu, cmdbuf, paramsBuffer, paramsTransfer, sizeof(ParamsType), &params);
+                                    // compute pass
+                                    SDL_GPUStorageTextureReadWriteBinding binding[] = {
+                                        SDL_GPUStorageTextureReadWriteBinding{k == 0 ? colorTextures[sample % 2] : dirTextures[sample % 2]},
+                                    };
+                                    lastSample = sample % 2;
+                                    const uint32_t nextSample = (sample + 1) % 2;
+                                    SDL_GPUBuffer* bufferBindings[] = {paramsBuffer, lightsBuffer, bvhNodesBuffer, bvhVertsBuffer, bvhIndsBuffer};
+                                    SDL_GPUComputePass* computePass = SDL_BeginGPUComputePass(cmdbuf, binding, 1, nullptr, 0);
+                                    SDL_BindGPUComputeStorageTextures(computePass, 0, k == 0 ? &colorTextures[nextSample] : &dirTextures[nextSample], 1);
+                                    SDL_BindGPUComputeStorageBuffers(computePass, 0, bufferBindings, NUM_SHADER_BINDINGS);
+                                    SDL_BindGPUComputePipeline(computePass, pipeline);
+                                    SDL_DispatchGPUCompute(computePass, calcWidth / NUM_SHADER_THREADCOUNT, calcWidth / NUM_SHADER_THREADCOUNT, 1);
+                                    SDL_EndGPUComputePass(computePass);
 
-                                SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdbuf);
-                                if (fence == nullptr) {
-                                    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPU command buffer submission failed: %s", SDL_GetError());
-                                    result = false;
-                                } else {
-                                    SDL_WaitForGPUFences(gpu, true, &fence, 1);
-                                    SDL_ReleaseGPUFence(gpu, fence);
-                                }
+                                    SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdbuf);
+                                    if (fence == nullptr) {
+                                        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPU command buffer submission failed: %s", SDL_GetError());
+                                        result = false;
+                                    } else {
+                                        SDL_WaitForGPUFences(gpu, true, &fence, 1);
+                                        SDL_ReleaseGPUFence(gpu, fence);
+                                        // SDL_Delay(100);
+                                    }
 
-                                if (shouldCancelFunc != nullptr && shouldCancelFunc()) {
-                                    // k = 2;
-                                    sample = samples;
-                                    i = w;
-                                    j = h;
+                                    if (shouldCancelFunc != nullptr && shouldCancelFunc()) {
+                                        // k = 2;
+                                        sample = samples;
+                                        i = w;
+                                        j = h;
+                                        m = lightCount;
+                                    }
                                 }
                             }
                         }
@@ -725,6 +772,7 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
                         } else {
                             SDL_WaitForGPUFences(gpu, true, &fence, 1);
                             SDL_ReleaseGPUFence(gpu, fence);
+                            // SDL_Delay(500);
                             void* rawBufferData = SDL_MapGPUTransferBuffer(gpu, transferBuffer, true);
                             float* rgba32 = (float*)rawBufferData;
                             uint8_t* rgba8 = (uint8_t*)malloc(w * h * 4);
@@ -823,12 +871,12 @@ std::vector<ImPlot3DPoint> get_ImPlot3D_verts(const AABB aabb, const std::vector
     return sdl_verts;
 }
 
-SDL_GPUShader* load_shader(SDL_GPUDevice* gpu, const uint8_t* code, size_t codeSize, SDL_GPUShaderStage stage, uint32_t samplers, uint32_t uniforms) {
+SDL_GPUShader* load_shader(SDL_GPUDevice* gpu, const uint8_t* code, size_t codeSize, SDL_GPUShaderStage stage, uint32_t samplers, uint32_t uniforms, const SDL_GPUShaderFormat format) {
     SDL_GPUShaderCreateInfo shaderInfo{};
     shaderInfo.code = (const uint8_t*)code;
     shaderInfo.code_size = codeSize;
     shaderInfo.entrypoint = "main";
-    shaderInfo.format = SDL_GPU_SHADERFORMAT_SPIRV;
+    shaderInfo.format = format;
     shaderInfo.stage = stage;
     shaderInfo.num_samplers = samplers;
     shaderInfo.num_uniform_buffers = uniforms;
@@ -916,8 +964,18 @@ void render_preview(SDL_GPUDevice* gpu, SDL_GPUTexture* outputTexture, SDL_GPUTe
         return;
     }
 
-    SDL_GPUShader* vertShader = load_shader(gpu, gBasicVertSPVData, gBasicVertSPVSize, SDL_GPU_SHADERSTAGE_VERTEX, 0, 1);
-    SDL_GPUShader* fragShader = load_shader(gpu, gBasicFragSPVData, gBasicFragSPVSize, SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 0);
+    SDL_GPUShader* vertShader = nullptr;
+    if (is_dxil(gpu)) {
+        vertShader = load_shader(gpu, gBasicVertDXILData, gBasicVertDXILSize, SDL_GPU_SHADERSTAGE_VERTEX, 0, 1, SDL_GPU_SHADERFORMAT_DXIL);
+    } else {
+        vertShader = load_shader(gpu, gBasicVertSPVData, gBasicVertSPVSize, SDL_GPU_SHADERSTAGE_VERTEX, 0, 1, SDL_GPU_SHADERFORMAT_SPIRV);
+    }
+    SDL_GPUShader* fragShader = nullptr;
+    if (is_dxil(gpu)) {
+        fragShader = load_shader(gpu, gBasicFragDXILData, gBasicFragDXILSize, SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 0, SDL_GPU_SHADERFORMAT_DXIL);
+    } else {
+        fragShader = load_shader(gpu, gBasicFragSPVData, gBasicFragSPVSize, SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 0, SDL_GPU_SHADERFORMAT_SPIRV);
+    }
 
     SDL_GPUSamplerCreateInfo samplerInfo{};
     SDL_GPUSampler* sampler = SDL_CreateGPUSampler(gpu, &samplerInfo);
@@ -1325,16 +1383,23 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
+    SDL_SetLogPriorities(SDL_LOG_PRIORITY_DEBUG);
     SDL_SetLogOutputFunction(on_log, nullptr);
 
     for (int i = 0; i < SDL_GetNumGPUDrivers(); i++) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GPU API supported: %s", SDL_GetGPUDriver(i));
     }
 
+    char devbuffer[BUFSIZ] = { 0 };
+    char* devPtr = devbuffer;
+    if (!get_arg_value(argc, argv, "-api", devbuffer, sizeof(devbuffer))) {
+        devPtr = nullptr;
+    }
+
 #ifdef NDEBUG
-    SDL_GPUDevice* gpu = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, false, nullptr);
+    SDL_GPUDevice* gpu = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL, false, devPtr);
 #else
-    SDL_GPUDevice* gpu = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, true, nullptr);
+    SDL_GPUDevice* gpu = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL, true, devPtr);
 #endif
 
     if (gpu == nullptr) {
@@ -1345,28 +1410,24 @@ int main(int argc, char* argv[]) {
 
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Selected GPU API: %s", SDL_GetGPUDeviceDriver(gpu));
 
-    if (argc > 1) {
-        cli_progress = true;
+    uint32_t samples = 4;
+    uint32_t size = 1024;
+    uint32_t seed = 0;
+    char buffer[BUFSIZ];
+    get_arg_value_uint(argc, argv, "-samples", &samples);
+    get_arg_value_uint(argc, argv, "-size", &size);
+    get_arg_value_uint(argc, argv, "-seed", &seed);
+    if (get_arg_value(argc, argv, "-file", buffer, sizeof(buffer))) {
+        // cli_progress = true;
 
-#ifdef WIN32
-        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-        DWORD mode = 0;
-        GetConsoleMode(hConsole, &mode);
-        SetConsoleMode(hConsole, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
-#endif
+// #ifdef WIN32
+//         HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+//         DWORD mode = 0;
+//         GetConsoleMode(hConsole, &mode);
+//         SetConsoleMode(hConsole, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+// #endif
 
-        uint32_t samples = 4;
-        uint32_t size = 1024;
-        uint32_t seed = 0;
-        char buffer[BUFSIZ];
-        get_arg_value_uint(argc, argv, "-samples", &samples);
-        get_arg_value_uint(argc, argv, "-size", &size);
-        get_arg_value_uint(argc, argv, "-seed", &seed);
-        if (get_arg_value(argc, argv, "-file", buffer, sizeof(buffer))) {
-            bake_lightmaps(nullptr, gpu, nullptr, buffer, (uint16_t)size, 0, samples);
-        } else {
-            bake_lightmaps(nullptr, gpu, nullptr, argv[argc - 1], (uint16_t)size, 0, samples);
-        }
+        bake_lightmaps(nullptr, gpu, nullptr, buffer, (uint16_t)size, 0, samples);
     } else {
         // bake_lightmaps(nullptr, gpu, nullptr, "assets/test1.glb", 1024);
 #ifdef WIN32

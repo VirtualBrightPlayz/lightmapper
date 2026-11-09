@@ -32,23 +32,23 @@ bool CheckAABB(float3 origin, float3 dir_inv, AABB aabb)
 
 bool IntersectTriangle_MT97(Ray ray, float3 vert0, float3 vert1, float3 vert2, inout float t, inout float u, inout float v)
 {
-    float3 edge1 = vert1 - vert0;
-    float3 edge2 = vert2 - vert0;
+    const float3 edge1 = vert1 - vert0;
+    const float3 edge2 = vert2 - vert0;
 
-    float3 pvec = cross(ray.direction, edge2);
+    const float3 pvec = cross(ray.direction, edge2);
 
-    float det = dot(edge1, pvec);
+    const float det = dot(edge1, pvec);
 
     if (det < EPSILON)
         return false;
-    float inv_det = 1.0 / det;
+    const float inv_det = 1.0 / det;
 
-    float3 tvec = ray.origin - vert0;
+    const float3 tvec = ray.origin - vert0;
 
     u = dot(tvec, pvec) * inv_det;
     if (u < 0.0 || u > 1.0)
         return false;
-    float3 qvec = cross(tvec, edge1);
+    const float3 qvec = cross(tvec, edge1);
 
     v = dot(ray.direction, qvec) * inv_det;
     if (v < 0.0 || u + v > 1.0)
@@ -66,12 +66,16 @@ void IntersectVertsInds(Ray ray, inout float3 hitDUV, out uint32_t hitIdx, IArra
     const float idkValue = 1e30f;
     float3 hit = float3(idkValue, 0, 0);
     hitIdx = uint32_t.maxValue;
-    const float3 rDirection = float3(1.0f / ray.direction.x, 1.0f / ray.direction.y, 1.0f / ray.direction.z);
+    const float3 rD = float3(1.0 / ray.direction.x, 1.0 / ray.direction.y, 1.0 / ray.direction.z);
+    const float3 rO = ray.origin * -rD;
     uint32_t node = 0;
-    uint32_t stack[64];
+    uint32_t stack[32];
     uint32_t stackPtr = 0;
-    while (true)
+    uint32_t counter = 0;
+    while (counter < 10240)
+    // while (true)
     {
+        counter++;
         const BVHNode n = bvhNodes[node];
         const float3 lmin = n.lmin.xyz;
         const float3 lmax = n.lmax.xyz;
@@ -92,6 +96,7 @@ void IntersectVertsInds(Ray ray, inout float3 hitDUV, out uint32_t hitIdx, IArra
                     {
                         hit = float3(t, u, v);
                         hitIdx = triIdx;
+                        hitDUV = hit;
                     }
                 }
             }
@@ -102,10 +107,10 @@ void IntersectVertsInds(Ray ray, inout float3 hitDUV, out uint32_t hitIdx, IArra
         }
         uint32_t left = reinterpret<uint32_t>(n.lmin.w);
         uint32_t right = reinterpret<uint32_t>(n.lmax.w);
-        const float3 t1a = (lmin.xyz - ray.origin) * rDirection;
-        const float3 t2a = (lmax.xyz - ray.origin) * rDirection;
-        const float3 t1b = (rmin.xyz - ray.origin) * rDirection;
-        const float3 t2b = (rmax.xyz - ray.origin) * rDirection;
+        const float3 t1a = mad(lmin.xyz, rD, rO); // (lmin.xyz - ray.origin) * rDirection;
+        const float3 t2a = mad(lmax.xyz, rD, rO); // (lmax.xyz - ray.origin) * rDirection;
+        const float3 t1b = mad(rmin.xyz, rD, rO); // (rmin.xyz - ray.origin) * rDirection;
+        const float3 t2b = mad(rmax.xyz, rD, rO); // (rmax.xyz - ray.origin) * rDirection;
         const float3 minta = min(t1a, t2a);
         const float3 maxta = max(t1a, t2a);
         const float3 mintb = min(t1b, t2b);
@@ -116,7 +121,7 @@ void IntersectVertsInds(Ray ray, inout float3 hitDUV, out uint32_t hitIdx, IArra
         const float tmaxb = min(min(min(maxtb.x, maxtb.y), maxtb.z), hit.x);
         float dist1 = tmina > tmaxa ? idkValue : tmina;
         float dist2 = tminb > tmaxb ? idkValue : tminb;
-        bool swapped = false;
+        /*bool swapped = false;
         if (dist1 > dist2)
         {
             swapped = true;
@@ -126,24 +131,134 @@ void IntersectVertsInds(Ray ray, inout float3 hitDUV, out uint32_t hitIdx, IArra
             uint32_t t = left;
             left = right;
             right = t;
-        }
-        if (dist1 == idkValue /*|| (tmina > tmaxa && !swapped) || (tminb > tmaxb && swapped)*/)
+        }*/
+        if (dist1 > dist2)
         {
-            if (stackPtr == 0)
-                break;
+            if (dist2 == idkValue)
+            {
+                if (stackPtr == 0)
+                    break;
+                else
+                    node = stack[--stackPtr];
+            }
             else
-                node = stack[--stackPtr];
+            {
+                node = right;
+                if (dist1 < idkValue)
+                    stack[stackPtr++] = left;
+            }
         }
         else
         {
-            node = left;
-            if (dist2 != idkValue)
-                stack[stackPtr++] = right;
-            if (stackPtr >= stack.getCount())
-                break;
+            if (dist1 == idkValue)
+            {
+                if (stackPtr == 0)
+                    break;
+                else
+                    node = stack[--stackPtr];
+            }
+            else
+            {
+                node = left;
+                if (dist1 < idkValue)
+                    stack[stackPtr++] = right;
+            }
         }
     }
     hitDUV = hit;
+}
+
+// This function is based off tiny_bvh's BVH_GPU impl.
+bool IntersectVertsIndsFast(Ray ray, const float tMax, IArray<MeshVertex> verts, IArray<uint32_t> primIdx, IArray<BVHNode> bvhNodes)
+{
+    const float idkValue = 1e30f;
+    const float3 rD = float3(1.0 / ray.direction.x, 1.0 / ray.direction.y, 1.0 / ray.direction.z);
+    const float3 rO = ray.origin * -rD;
+    uint32_t node = 0;
+    uint32_t stack[32];
+    uint32_t stackPtr = 0;
+    uint32_t counter = 0;
+    while (counter < 10240)
+    // while (true)
+    {
+        counter++;
+        const BVHNode n = bvhNodes[node];
+        const float3 lmin = n.lmin.xyz;
+        const float3 lmax = n.lmax.xyz;
+        const float3 rmin = n.rmin.xyz;
+        const float3 rmax = n.rmax.xyz;
+        const uint32_t triCount = reinterpret<uint32_t>(n.rmin.w);
+        const uint32_t firstTri = reinterpret<uint32_t>(n.rmax.w);
+        if (triCount > 0)
+        {
+            for (uint32_t i = 0; i < triCount; i++)
+            {
+                const uint32_t triIdx = primIdx[firstTri + i];
+                const uint32_t v0 = triIdx * 3;
+                float t, u, v;
+                if (IntersectTriangle_MT97(ray, verts[v0].position.xyz, verts[v0 + 1].position.xyz, verts[v0 + 2].position.xyz, t, u, v))
+                {
+                    if (t > 0 && t < tMax)
+                    {
+                        return true;
+                    }
+                }
+            }
+            if (stackPtr == 0)
+                break;
+            node = stack[--stackPtr];
+            continue;
+        }
+        uint32_t left = reinterpret<uint32_t>(n.lmin.w);
+        uint32_t right = reinterpret<uint32_t>(n.lmax.w);
+        const float3 t1a = mad(lmin.xyz, rD, rO); // (lmin.xyz - ray.origin) * rDirection;
+        const float3 t2a = mad(lmax.xyz, rD, rO); // (lmax.xyz - ray.origin) * rDirection;
+        const float3 t1b = mad(rmin.xyz, rD, rO); // (rmin.xyz - ray.origin) * rDirection;
+        const float3 t2b = mad(rmax.xyz, rD, rO); // (rmax.xyz - ray.origin) * rDirection;
+        const float3 minta = min(t1a, t2a);
+        const float3 maxta = max(t1a, t2a);
+        const float3 mintb = min(t1b, t2b);
+        const float3 maxtb = max(t1b, t2b);
+        const float tmina = max(max(max(minta.x, minta.y), minta.z), 0);
+        const float tminb = max(max(max(mintb.x, mintb.y), mintb.z), 0);
+        const float tmaxa = min(min(min(maxta.x, maxta.y), maxta.z), tMax);
+        const float tmaxb = min(min(min(maxtb.x, maxtb.y), maxtb.z), tMax);
+        float dist1 = tmina > tmaxa ? idkValue : tmina;
+        float dist2 = tminb > tmaxb ? idkValue : tminb;
+        if (dist1 > dist2)
+        {
+            if (dist2 == idkValue)
+            {
+                if (stackPtr == 0)
+                    break;
+                else
+                    node = stack[--stackPtr];
+            }
+            else
+            {
+                node = right;
+                if (dist1 < idkValue)
+                    stack[stackPtr++] = left;
+            }
+        }
+        else
+        {
+            if (dist1 == idkValue)
+            {
+                if (stackPtr == 0)
+                    break;
+                else
+                    node = stack[--stackPtr];
+            }
+            else
+            {
+                node = left;
+                if (dist1 < idkValue)
+                    stack[stackPtr++] = right;
+            }
+        }
+    }
+    return false;
 }
 
 void IntersectMeshObject(Ray ray, inout RayHit bestHit, MeshObject mesh, float4 color, IArray<MeshVertex> meshVertices, IArray<uint4> meshIndices)

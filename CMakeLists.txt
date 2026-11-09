@@ -60,8 +60,8 @@ foreach(shader_file ${SHADER_SOURCES})
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -target spirv -profile spirv_1_3 -entry vertexMain -o ${CMAKE_CURRENT_BINARY_DIR}/assets/${file_spv}.vert.spv
         COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -target spirv -profile spirv_1_3 -entry fragmentMain -o ${CMAKE_CURRENT_BINARY_DIR}/assets/${file_spv}.frag.spv
-        # COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -target dxil -profile sm_6_0 -entry vertexMain -o $<TARGET_FILE_DIR:lightmap>/assets/${file_dxil}.vert.dxil
-        # COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -target dxil -profile sm_6_0 -entry fragmentMain -o $<TARGET_FILE_DIR:lightmap>/assets/${file_dxil}.frag.dxil
+        COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -target dxil -profile sm_6_0 -entry vertexMain -o ${CMAKE_CURRENT_BINARY_DIR}/assets/${file_dxil}.vert.dxil
+        COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -target dxil -profile sm_6_0 -entry fragmentMain -o ${CMAKE_CURRENT_BINARY_DIR}/assets/${file_dxil}.frag.dxil
         # COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -target dxbc -profile sm_5_1 -entry vertexMain -o $<TARGET_FILE_DIR:lightmap>/assets/${file_dxil}.vert.dxbc
         # COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -target dxbc -profile sm_5_1 -entry fragmentMain -o $<TARGET_FILE_DIR:lightmap>/assets/${file_dxil}.frag.dxbc
     )
@@ -75,7 +75,8 @@ foreach(shader_file ${SHADER_COMPUTE_SOURCES})
     add_custom_command(
         TARGET incbin PRE_BUILD
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -emit-spirv-via-glsl -DSLANGC -target spirv -profile spirv_1_0 -entry main -o ${CMAKE_CURRENT_BINARY_DIR}/assets/${file_spv}.spv
+        COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -DSLANGC -target spirv -profile spirv_1_3 -entry main -o ${CMAKE_CURRENT_BINARY_DIR}/assets/${file_spv}.spv
+        COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -DSLANGC -target dxil -profile sm_6_0 -entry main -o ${CMAKE_CURRENT_BINARY_DIR}/assets/${file_dxil}.dxil
         # COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -target spirv -profile spirv_1_3 -entry vertexMain -o $<TARGET_FILE_DIR:lightmap>/assets/${file_spv}.vert.spv
         # COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -target spirv -profile spirv_1_3 -entry fragmentMain -o $<TARGET_FILE_DIR:lightmap>/assets/${file_spv}.frag.spv
         # COMMAND slangc ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -target dxil -profile sm_6_0 -entry vertexMain -o $<TARGET_FILE_DIR:lightmap>/assets/${file_dxil}.vert.dxil

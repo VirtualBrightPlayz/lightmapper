@@ -2,16 +2,16 @@
 #include "ray.slang"
 #include "intersect.slang"
 
-layout(binding = 0, set = 0) Texture2D<float4> colorTex;
+layout(binding = 0, set = 0) Texture2D<float4> colorTex : register(t0, space0);
 // layout(binding = 1, set = 0) Texture2D<float4> emissionTex;
 
-layout(binding = 1, set = 0) StructuredBuffer<ParamsType> Params;
-layout(binding = 2, set = 0) StructuredBuffer<PointLightObject> PointLights;
-layout(binding = 3, set = 0) StructuredBuffer<BVHNode> BVHNodes;
-layout(binding = 4, set = 0) StructuredBuffer<MeshVertex> BVHVertices;
-layout(binding = 5, set = 0) StructuredBuffer<uint32_t> BVHIndices;
+layout(binding = 1, set = 0) StructuredBuffer<ParamsType> Params : register(t1, space0);
+layout(binding = 2, set = 0) StructuredBuffer<PointLightObject> PointLights : register(t2, space0);
+layout(binding = 3, set = 0) StructuredBuffer<BVHNode> BVHNodes : register(t3, space0);
+layout(binding = 4, set = 0) StructuredBuffer<MeshVertex> BVHVertices : register(t4, space0);
+layout(binding = 5, set = 0) StructuredBuffer<uint32_t> BVHIndices : register(t5, space0);
 
-layout(binding = 0, set = 1) RWTexture2D<float4> outTex;
+layout(binding = 0, set = 1) RWTexture2D<float4> outTex : register(u0, space1);
 
 static float seed = 0;
 static uint2 threadId = uint2(0);
@@ -120,6 +120,11 @@ RayHit Trace(Ray ray, float3 color, bool canShade)
     return bestHit;
 }
 
+bool TraceFast(Ray ray, const float maxDist = 1e30f)
+{
+    return IntersectVertsIndsFast(ray, maxDist, BVHVertices, BVHIndices, BVHNodes);
+}
+
 RayHit Trace(Ray ray)
 {
     return Trace(ray, float3(0), false);
@@ -215,15 +220,20 @@ void ShadeBVH(const MeshVertex v0, const MeshVertex v1, const MeshVertex v2, con
     float4 resultNormal = float4(0);
     const float3 wpos = ray.origin.xyz;
     const float3 wnorm = ray.direction.xyz;
+    // lightColor.rgb = wnorm;
+    // lightColor.a = 1.0;
+    // lightDir.xyz = wnorm;
+    // return;
     // texture lights
     if (Params[0].inSeed.y != 0)
     {
         // sample around us
-        for (uint k = 0; k < 1; k++)
+        // for (uint k = 0; k < 1; k++)
+        uint k = 0;
         {
             ray.direction = normalize(SampleHemisphere(wnorm, 1.0));
             RayHit hit = Trace(ray);
-            if (hit.dist != float.maxValue)
+            if (hit.dist != 1e30f)
             {
                 const float4 sample = colorTex[uint2(hit.uv1 * sizeOut)];
                 resultColor.xyz += sample.xyz;
@@ -237,7 +247,7 @@ void ShadeBVH(const MeshVertex v0, const MeshVertex v1, const MeshVertex v2, con
     else
     {
         // point lights
-        for (uint k = 0; k < PointLights.getCount(); k++)
+        uint k = Params[0].offsetPixels.w;
         {
             // reset the ray
             ray.origin = PointLights[k].position.xyz;
@@ -248,16 +258,16 @@ void ShadeBVH(const MeshVertex v0, const MeshVertex v1, const MeshVertex v2, con
             ray.predicted_distance = 0;
             // trace the ray and shade
             RayHit hit = Trace(ray);
-            if (hit.dist + 0.001 < d)
+            if (hit.dist + 0.001 >= d)
+            // if (!TraceFast(ray, d))
             {
-                // we hit something closer, don't shade
-                continue;
+                const float attn = atten2(PointLights[k].position.w, hit.dist);
+                // const float attn = 1.0;
+                resultColor += float4(ray.energy * attn, 1);
+                float3 tangentNormal = -ray.direction;
+                resultNormal.xyz = (resultNormal.xyz + tangentNormal);
+                resultNormal.w = (resultNormal.w + attn) / 2.0;
             }
-            const float attn = atten2(PointLights[k].position.w, hit.dist);
-            resultColor += float4(ray.energy * attn, 1);
-            float3 tangentNormal = -ray.direction;
-            resultNormal.xyz = (resultNormal.xyz + tangentNormal);
-            resultNormal.w = (resultNormal.w + attn) / 2.0;
         }
     }
     // finalize outputs as needed
@@ -282,9 +292,13 @@ float4 TraceBVH(float2 uv1)
         const MeshVertex v0 = BVHVertices[BVHIndices[i] * 3 + 0];
         const MeshVertex v1 = BVHVertices[BVHIndices[i] * 3 + 1];
         const MeshVertex v2 = BVHVertices[BVHIndices[i] * 3 + 2];
-        const float3 uvw = GetBarycentric((v0.uv01.zw), (v1.uv01.zw), (v2.uv01.zw), (uv1));
         const float2 uvmax = max(max(v0.uv01.zw, v1.uv01.zw), v2.uv01.zw) + halfPixel;
         const float2 uvmin = min(min(v0.uv01.zw, v1.uv01.zw), v2.uv01.zw) - halfPixel;
+        if (uv1.x < uvmin.x || uv1.x > uvmax.x || uv1.y < uvmin.y || uv1.y > uvmax.y)
+        {
+            continue;
+        }
+        const float3 uvw = GetBarycentric((v0.uv01.zw), (v1.uv01.zw), (v2.uv01.zw), (uv1));
         if (uvw.x < -EPSILON || uvw.x > 1 + EPSILON)
         {
             // continue;
@@ -297,11 +311,8 @@ float4 TraceBVH(float2 uv1)
         {
             // continue;
         }
-        if (uv1.x < uvmin.x || uv1.x > uvmax.x || uv1.y < uvmin.y || uv1.y > uvmax.y)
-        {
-            continue;
-        }
         ShadeBVH(v0, v1, v2, uvw, lightColor, lightDir);
+        break;
     }
     if (Params[0].offsetPixels.z == 1)
     {
@@ -324,14 +335,14 @@ void main(uint3 id : SV_DispatchThreadID)
     }
     threadId = uv;
     float2 uv1 = (uv + 0.5) / float2(sizeOut);
-    if (Params[0].inSeed.y == 0)
+    if (Params[0].inSeed.y == 0 && Params[0].offsetPixels.w == 0)
     {
         outTex[uv] = float4(0);
     }
     float4 result = TraceBVH(uv1);
     if (result.w > 0)
     {
-        if (Params[0].inSeed.y == 0)
+        if (Params[0].inSeed.y == 0 && Params[0].offsetPixels.w == 0)
             outTex[uv] = result;
         else if (Params[0].offsetPixels.z == 1)
         {
@@ -339,9 +350,9 @@ void main(uint3 id : SV_DispatchThreadID)
             float3 normal = result.xyz * 2.0 - 1.0;
             float3 output = normalize(input + normal);
             float inAttn = outTex[uv].w;
-            outTex[uv] = float4(output * 0.5 + 0.5, inAttn + result.w / (Params[0].inSeed.y + 1));
+            outTex[uv] = float4(output * 0.5 + 0.5, inAttn + result.w / (Params[0].inSeed.y * Params[0].offsetPixels.w + 1));
         }
         else
-            outTex[uv] = outTex[uv] + (result / (Params[0].inSeed.y + 1));
+            outTex[uv] = outTex[uv] + (result / (Params[0].inSeed.y * Params[0].offsetPixels.w + 1));
     }
 }

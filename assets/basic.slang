@@ -9,15 +9,15 @@ struct PerView
     float3 uViewPos;
 };
 
-layout(binding = 0, set = 1) ConstantBuffer<PerView> gPerView;
-layout(binding = 0, set = 2) Sampler2D<float4> ColorTex;
+layout(binding = 0, set = 1) ConstantBuffer<PerView> gPerView : register(b0, space1);
+layout(binding = 0, set = 2) Sampler2D<float4> ColorTex : register(t0, space2) : register(s0, space2);
 
 struct VertexInput
 {
     uint VertexIndex : SV_VertexID;
     float4 Position : TEXCOORD0;
     float4 Normal : TEXCOORD1;
-    float4 UV01 : TEXCOORD5;
+    float4 UV01 : TEXCOORD2;
 };
 
 struct FragmentInput
