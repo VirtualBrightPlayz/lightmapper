@@ -89,14 +89,14 @@ void progress_reset() {
 }
 
 void report_progress(const int32_t progress) {
-    // std::time_t cur = std::time(nullptr);
+    std::time_t cur = std::time(nullptr);
     last_progress_value = progress;
-    // if (cur > last_progress_time) {
+    if (cur > last_progress_time) {
         if (cli_progress)
             std::cout << (char)27 << "]9;4;1;" << progress << (char)7;
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "[%i%%]", progress);
-        // last_progress_time = cur;
-    // }
+        last_progress_time = cur;
+    }
 }
 
 uint8_t* malloc_file(const std::string path, size_t* filesize) {
