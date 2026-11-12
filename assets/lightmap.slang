@@ -252,7 +252,7 @@ void ShadeBVH(const MeshVertex v0, const MeshVertex v1, const MeshVertex v2, con
             ray.predicted_distance = 0;
 
             float brightness = 1.0;
-            if (PointLights[k].data.x >= 1)
+            if (PointLights[k].data.x >= 1 - EPSILON && PointLights[k].data.x <= 1 + EPSILON)
             {
                 const float product = dot(normalize(ray.direction), normalize(lightDir));
                 const float cosDiff = PointLights[k].data.y - PointLights[k].data.z;
