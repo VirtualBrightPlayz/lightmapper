@@ -762,7 +762,7 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
                         // render texture in chunks
                         for (size_t i = 0; i < w; i+=calcWidth) {
                             for (size_t j = 0; j < h; j+=calcWidth) {
-                                for (size_t m = 0; m < lightCount; m++) {
+                                for (size_t m = 0; m < lightCount; m+=NUM_LIGHT_PASS) {
                                     size_t progress = (k * samples * w * h * lightCount) + (sample * w * h * lightCount) + (i * h * lightCount) + (j * lightCount) + m;
                                     report_progress((int)((float)progress / (float)(count * lightCount) * 100.0f));
                                     SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(gpu);

@@ -4,6 +4,8 @@
 #include "data_macros.h"
 #endif
 
+#define NUM_LIGHT_PASS 8
+
 struct ParamsType
 {
     float4x4 view;

@@ -222,8 +222,7 @@ void ShadeBVH(const MeshVertex v0, const MeshVertex v1, const MeshVertex v2, con
     if (Params[0].inSeed.y != 0)
     {
         // sample around us
-        // for (uint k = 0; k < 1; k++)
-        uint k = 0;
+        for (uint k = 0; k < NUM_LIGHT_PASS; k++)
         {
             ray.direction = normalize(SampleHemisphere(wnorm, 1.0));
             RayHit hit = Trace(ray);
@@ -240,7 +239,7 @@ void ShadeBVH(const MeshVertex v0, const MeshVertex v1, const MeshVertex v2, con
     else
     {
         // point lights
-        uint k = Params[0].offsetPixels.w;
+        for (uint k = Params[0].offsetPixels.w, j = 0; k < PointLights.getCount() && j < NUM_LIGHT_PASS; k++, j++)
         {
             // reset the ray
             const float3 lightPos = PointLights[k].position.xyz;
@@ -267,7 +266,7 @@ void ShadeBVH(const MeshVertex v0, const MeshVertex v1, const MeshVertex v2, con
     // finalize outputs as needed
     if (resultColor.a != 0)
     {
-        lightColor = (lightColor + resultColor / resultColor.a) / 2.0;
+        lightColor += resultColor;
         lightColor.a = 1.0;
     }
     lightDir.xyz = (lightDir.xyz + resultNormal.xyz);
