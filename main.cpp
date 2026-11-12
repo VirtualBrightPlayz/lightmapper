@@ -315,7 +315,7 @@ void load_glb_mesh(tinygltf::Model& model, tinygltf::Node& node, std::vector<Mes
 void load_glb_light(tinygltf::Model& model, tinygltf::Node& node, std::vector<PointLightObject>& lights, float4x4 xformGlobal) {
     if (node.light != -1) {
         tinygltf::Light mdlLight = model.lights[node.light];
-        if (mdlLight.type != "point") {
+        if (mdlLight.type != "point" && mdlLight.type != "spot") {
             return;
         }
         PointLightObject light{};
@@ -338,8 +338,18 @@ void load_glb_light(tinygltf::Model& model, tinygltf::Node& node, std::vector<Po
         light.position.y = pos.y;
         light.position.z = pos.z;
         light.position.w = (float)mdlLight.range;
+        light.data.x = 0;
+        if (mdlLight.type == "spot") {
+            light.data.x = 1;
+            float3 dir = rot * float3(0, 0, -1);
+            light.direction.x = dir.x;
+            light.direction.y = dir.y;
+            light.direction.z = dir.z;
+            light.data.y = (float)std::cos(mdlLight.spot.innerConeAngle);
+            light.data.z = (float)std::cos(mdlLight.spot.outerConeAngle);
+        }
         if (mdlLight.extras.IsObject() && mdlLight.extras.Has("size")) {
-            light.data.x = (float)mdlLight.extras.Get("size").GetNumberAsDouble();
+            light.data.w = (float)mdlLight.extras.Get("size").GetNumberAsDouble();
         }
         lights.push_back(light);
     }

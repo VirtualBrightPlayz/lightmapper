@@ -243,19 +243,34 @@ void ShadeBVH(const MeshVertex v0, const MeshVertex v1, const MeshVertex v2, con
         {
             // reset the ray
             const float3 lightPos = PointLights[k].position.xyz;
+            const float3 lightDir = PointLights[k].direction.xyz;
             const float3 targetPos = wpos;
             ray.origin = lightPos;
             ray.direction = (targetPos - lightPos);
             const float d = distance(targetPos, lightPos);
             ray.energy = PointLights[k].color.rgb * PointLights[k].color.a;
             ray.predicted_distance = 0;
+
+            float brightness = 1.0;
+            if (PointLights[k].data.x == 1)
+            {
+                const float product = dot(normalize(ray.direction), normalize(lightDir));
+                const float cosDiff = PointLights[k].data.y - PointLights[k].data.z;
+                brightness = clamp((product - PointLights[k].data.z) / cosDiff, 0.0, 1.0);
+                if (brightness <= 0.0)
+                {
+                    continue;
+                }
+            }
+
             // trace the ray and shade
             RayHit hit = Trace(ray);
             const float d2 = distance(hit.position, lightPos);
             if (d2 + 0.05 >= d)
             if (hit.dist != 1e30f)
             {
-                const float attn = atten2(PointLights[k].position.w, d);
+                float attn = atten2(PointLights[k].position.w, d);
+                attn *= brightness;
                 resultColor += float4(ray.energy * attn, 1);
                 float3 tangentNormal = -ray.direction;
                 resultNormal.xyz = (resultNormal.xyz + tangentNormal);

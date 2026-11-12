@@ -38,6 +38,7 @@ struct MeshVertex
 struct PointLightObject
 {
     float4 position;
+    float4 direction;
     float4 color;
     float4 data;
 };
