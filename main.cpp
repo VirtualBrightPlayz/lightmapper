@@ -355,7 +355,7 @@ void load_glb_light(tinygltf::Model& model, tinygltf::Node& node, std::vector<Po
     }
 }
 
-void load_glb(std::string file, std::vector<MeshObject>& meshes, std::vector<MeshVertex>& verts, std::vector<uint4>& inds, std::vector<PointLightObject>& lights) {
+void load_glb(std::string file, std::vector<MeshObject>& meshes, std::vector<MeshVertex>& verts, std::vector<uint4>& inds, std::vector<PointLightObject>& lights, float4& ambient_color) {
     tinygltf::TinyGLTF loader{};
     tinygltf::Model model{};
     std::string err;
@@ -536,6 +536,11 @@ void load_glb(std::string file, std::vector<MeshObject>& meshes, std::vector<Mes
         model_scene = 0;
     }
     tinygltf::Scene scene = model.scenes[model_scene];
+    if (scene.extras.IsObject() && scene.extras.Has("ambient_light_color_red") && scene.extras.Has("ambient_light_color_green") && scene.extras.Has("ambient_light_color_blue")) {
+        ambient_color.x = (float)scene.extras.Get("ambient_light_color_red").GetNumberAsDouble();
+        ambient_color.y = (float)scene.extras.Get("ambient_light_color_green").GetNumberAsDouble();
+        ambient_color.z = (float)scene.extras.Get("ambient_light_color_blue").GetNumberAsDouble();
+    }
     for (size_t n = 0; n < scene.nodes.size(); n++) {
         int nodeIdx = scene.nodes[n];
         tinygltf::Node node = model.nodes[nodeIdx];
@@ -648,7 +653,7 @@ std::vector<uint4> get_BVH_inds2(const std::vector<MeshVertex>& verts, const std
     return bvh_verts;
 }
 
-bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldCancelFunc)(), const std::string glbPath, const uint16_t texSize, const uint32_t seed = 0, const uint32_t samples = 4) {
+bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldCancelFunc)(), const std::string glbPath, const uint16_t texSize, const uint32_t seed = 0, const uint32_t samples = 4, const bool bakeDir = true) {
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Baking lightmaps: size=%u, seed=%u, samples=%u, file=\"%s\"", texSize, seed, samples, glbPath.c_str());
     progress_reset();
     report_progress(0);
@@ -672,7 +677,8 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
     std::vector<MeshVertex> verts{};
     std::vector<uint4> inds{};
     std::vector<PointLightObject> lights{};
-    load_glb(glbPath, meshes, verts, inds, lights);
+    float4 ambient_color = float4(0.0);
+    load_glb(glbPath, meshes, verts, inds, lights, ambient_color);
 
     if (meshes.size() == 0 || verts.size() == 0 || inds.size() == 0 || lights.size() == 0) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "The selected glb file is missing meshes or lights");
@@ -710,6 +716,7 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
             params.inSeed = float4(0);
             params.inSeed.x = (float)seed;
             params.offsetPixels = uint4(0);
+            params.ambient_color = ambient_color;
 
             SDL_GPUBuffer* paramsBuffer = nullptr;
             SDL_GPUTransferBuffer* paramsTransfer = nullptr;
@@ -757,8 +764,9 @@ bool bake_lightmaps(BakedLightmapData* data, SDL_GPUDevice* gpu, bool (* shouldC
                 }
                 size_t wCalc = w / calcWidth;
                 size_t hCalc = h / calcWidth;
-                size_t count = w * h * 2 * samples;
-                for (size_t k = 0; k < 2; k++) {
+                const size_t lightmapCount = bakeDir ? 2 : 1;
+                size_t count = w * h * samples * lightmapCount;
+                for (size_t k = 0; k < lightmapCount; k++) {
 
                     uint32_t lastSample = 0;
                     for (uint32_t sample = 0; sample < samples; sample++) {
@@ -988,7 +996,8 @@ void render_preview(SDL_GPUDevice* gpu, SDL_GPUTexture* outputTexture, SDL_GPUTe
     std::vector<MeshVertex> verts{};
     std::vector<uint4> inds{};
     std::vector<PointLightObject> lights{};
-    load_glb(path, meshes, verts, inds, lights);
+    float4 ambient_color = float4(0.0);
+    load_glb(path, meshes, verts, inds, lights, ambient_color);
     if (meshes.size() == 0) {
         return;
     }
@@ -1259,7 +1268,8 @@ bool gui_main(SDL_GPUDevice* gpu) {
                         lights.clear();
                         points.clear();
                         plotInds.clear();
-                        load_glb(filepath, meshes, verts, inds, lights);
+                        float4 ambient_color = float4(0.0);
+                        load_glb(filepath, meshes, verts, inds, lights, ambient_color);
                         aabb = {};
                         for (size_t i = 0; i < meshes.size(); i++) {
                             aabb.min_pos = glm::min(aabb.min_pos, meshes[i].aabb.min_pos);
@@ -1479,6 +1489,7 @@ int main(int argc, char* argv[]) {
 
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Selected GPU API: %s", SDL_GetGPUDeviceDriver(gpu));
 
+    bool directional = try_get_arg(argc, argv, "-color_only") == 0;
     uint32_t samples = 4;
     uint32_t size = 1024;
     uint32_t seed = 0;
@@ -1496,7 +1507,7 @@ int main(int argc, char* argv[]) {
 //         SetConsoleMode(hConsole, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
 // #endif
 
-        bake_lightmaps(nullptr, gpu, nullptr, buffer, (uint16_t)size, 0, samples);
+        bake_lightmaps(nullptr, gpu, nullptr, buffer, (uint16_t)size, 0, samples, directional);
     } else {
         // bake_lightmaps(nullptr, gpu, nullptr, "assets/test1.glb", 1024);
 #ifdef WIN32

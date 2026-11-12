@@ -12,6 +12,7 @@ struct ParamsType
     float4x4 invProj;
     float4 inSeed;
     uint4 offsetPixels;
+    float4 ambient_color;
 };
 
 struct AABB

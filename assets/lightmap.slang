@@ -284,6 +284,7 @@ void ShadeBVH(const MeshVertex v0, const MeshVertex v1, const MeshVertex v2, con
         lightColor += resultColor;
         lightColor.a = 1.0;
     }
+    lightColor += float4(Params[0].ambient_color.xyz, 1);
     lightDir.xyz = (lightDir.xyz + resultNormal.xyz);
     lightDir.w = (lightDir.w + resultNormal.w) / 2.0;
 }
