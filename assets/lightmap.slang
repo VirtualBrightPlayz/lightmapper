@@ -243,7 +243,7 @@ void ShadeBVH(const MeshVertex v0, const MeshVertex v1, const MeshVertex v2, con
         {
             // reset the ray
             const float3 lightPos = PointLights[k].position.xyz;
-            const float3 targetPos = wpos + wnorm * 0.01;
+            const float3 targetPos = wpos;
             ray.origin = lightPos;
             ray.direction = (targetPos - lightPos);
             const float d = distance(targetPos, lightPos);
@@ -252,7 +252,7 @@ void ShadeBVH(const MeshVertex v0, const MeshVertex v1, const MeshVertex v2, con
             // trace the ray and shade
             RayHit hit = Trace(ray);
             const float d2 = distance(hit.position, lightPos);
-            if (d2 + 0.01 >= d)
+            if (d2 + 0.05 >= d)
             if (hit.dist != 1e30f)
             {
                 const float attn = atten2(PointLights[k].position.w, d);
