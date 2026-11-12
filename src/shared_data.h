@@ -4,7 +4,7 @@
 #include "data_macros.h"
 #endif
 
-#define NUM_LIGHT_PASS 8
+#define NUM_LIGHT_PASS 4
 
 struct ParamsType
 {
